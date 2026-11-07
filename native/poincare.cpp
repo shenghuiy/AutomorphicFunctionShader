@@ -21,7 +21,6 @@
 #include <windows.h>
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cerrno>
 #include <cmath>
@@ -30,10 +29,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
-#include <mutex>
 #include <queue>
 #include <string>
-#include <thread>
 #include <vector>
 
 // Ask hybrid-graphics laptops to run this process on the discrete GPU.
@@ -203,23 +200,7 @@ struct App {
         return {cx + (x + 0.5 - 0.5 * W) * s, cy + ((H - 1 - y) + 0.5 - 0.5 * H) * s};
     }
 };
-static App app;  // owned by the render thread once it starts
-
-// Threading: the window thread only pumps messages and forwards input here.
-// All rendering, and all GPU waits, happen on the render thread. If the window
-// thread blocked on the GPU, a snap or maximize could deadlock: the GPU write
-// to a swap-chain buffer waits on DWM, which waits for the window thread.
-struct Input { UINT msg; WPARAM wp; LPARAM lp; };
-static std::mutex inputLock;
-static std::vector<Input> inputs;
-static std::wstring pendingTitle;  // guarded by inputLock
-static std::atomic<bool> quitRender{false};
-constexpr UINT WM_APP_TITLE = WM_APP + 1;
-
-static void postInput(UINT msg, WPARAM wp, LPARAM lp) {
-    std::lock_guard<std::mutex> lock(inputLock);
-    inputs.push_back({msg, wp, lp});
-}
+static App app;
 
 static void restart() {
     app.done = 0;
@@ -281,12 +262,7 @@ static void updateTitle() {
                   z.real(), z.imag(), fn[app.func], val.real(), val.imag(), app.scale() * app.W);
     wchar_t wbuf[512];
     MultiByteToWideChar(CP_UTF8, 0, buf, -1, wbuf, 512);
-    // SetWindowText would block on the window thread; hand the text over instead.
-    {
-        std::lock_guard<std::mutex> lock(inputLock);
-        pendingTitle = wbuf;
-    }
-    PostMessageW(app.hwnd, WM_APP_TITLE, 0, 0);
+    SetWindowTextW(app.hwnd, wbuf);
 }
 
 static std::string snapshotPath;  // --snapshot <file.png>: render to completion, save, exit
@@ -352,10 +328,8 @@ static void frame() {
         if (verifyGPU) verifyGpuValues();
         invarianceCheck();
         savePNG(snapshotPath.c_str());
-        quitRender = true;
-        PostMessageW(app.hwnd, WM_CLOSE, 0, 0);
+        PostQuitMessage(0);
         snapshotPath.clear();
-        return;
     }
     renderer.present(app.done >= app.count);
     updateTitle();
@@ -373,20 +347,20 @@ static void zoomAt(int x, int y, double k) {
     restart();
 }
 
-// Render thread: apply input forwarded by the window thread.
-static void handleInput(const Input& in) {
-    const LPARAM lp = in.lp;
-    switch (in.msg) {
+static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
     case WM_SIZE:
-        resize(LOWORD(lp), HIWORD(lp));
-        break;
+        if (renderer.ready()) resize(LOWORD(lp), HIWORD(lp));
+        return 0;
     case WM_LBUTTONDOWN:
         app.dragging = true;
         app.mx = short(LOWORD(lp)), app.my = short(HIWORD(lp));
-        break;
+        SetCapture(h);
+        return 0;
     case WM_LBUTTONUP:
         app.dragging = false;
-        break;
+        ReleaseCapture();
+        return 0;
     case WM_MOUSEMOVE: {
         int x = short(LOWORD(lp)), y = short(HIWORD(lp));
         if (app.dragging) {
@@ -396,13 +370,16 @@ static void handleInput(const Input& in) {
             restart();
         }
         app.mx = x, app.my = y;
-        break;
+        return 0;
     }
-    case WM_MOUSEWHEEL:  // lp already holds client coordinates
-        zoomAt(short(LOWORD(lp)), short(HIWORD(lp)), std::exp(-GET_WHEEL_DELTA_WPARAM(in.wp) / 120.0 * 0.18));
-        break;
+    case WM_MOUSEWHEEL: {
+        POINT p = {short(LOWORD(lp)), short(HIWORD(lp))};
+        ScreenToClient(h, &p);
+        zoomAt(p.x, p.y, std::exp(-GET_WHEEL_DELTA_WPARAM(wp) / 120.0 * 0.18));
+        return 0;
+    }
     case WM_CHAR:
-        switch (in.wp) {
+        switch (wp) {
         case '+': case '=': app.N = std::min<size_t>(app.N * 2, size_t(1) << 22); buildGroup(); break;
         case '-': case '_': app.N = std::max<size_t>(app.N / 2, 256); buildGroup(); break;
         case 'd': case 'D': app.fp64 = !app.fp64; app.chunk = 64; restart(); break;
@@ -413,82 +390,8 @@ static void handleInput(const Input& in) {
         case 'r': case 'R': app.cx = 0; app.cy = -0.35; app.span = 5.0; restart(); break;
         case 'i': case 'I': invarianceCheck(); break;
         case 'p': case 'P': app.saveRequested = true; break;
+        case 27: PostQuitMessage(0); break;
         }
-        break;
-    }
-}
-
-static void renderLoop() {
-    HANDLE ready = renderer.frameReady();
-    std::vector<Input> batch;
-    while (!quitRender) {
-        {
-            std::lock_guard<std::mutex> lock(inputLock);
-            batch.swap(inputs);
-        }
-        for (const Input& in : batch) handleInput(in);
-        batch.clear();
-        if (IsIconic(app.hwnd)) { Sleep(50); continue; }
-        // Render only when the swap chain can accept a frame.
-        if (WaitForSingleObject(ready, 100) != WAIT_OBJECT_0) continue;
-        frame();
-    }
-}
-
-static std::thread renderThread;
-
-// Stop the render thread while still answering messages, since it may be
-// waiting on work that needs this thread to respond.
-static void stopRenderThread() {
-    static bool stopping = false;  // messages pumped below can re-enter this
-    if (stopping || !renderThread.joinable()) return;
-    stopping = true;
-    quitRender = true;
-    HANDLE th = renderThread.native_handle();
-    while (MsgWaitForMultipleObjects(1, &th, FALSE, INFINITE, QS_ALLINPUT) == WAIT_OBJECT_0 + 1) {
-        MSG msg;
-        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_QUIT) { PostQuitMessage(int(msg.wParam)); break; }
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-    }
-    renderThread.join();
-}
-
-// Window thread: never touches the renderer.
-static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
-    switch (msg) {
-    case WM_SIZE: case WM_MOUSEMOVE: case WM_CHAR:
-        if (msg == WM_CHAR && wp == 27) { PostMessageW(h, WM_CLOSE, 0, 0); return 0; }
-        postInput(msg, wp, lp);
-        return 0;
-    case WM_LBUTTONDOWN:
-        SetCapture(h);
-        postInput(msg, wp, lp);
-        return 0;
-    case WM_LBUTTONUP:
-        ReleaseCapture();
-        postInput(msg, wp, lp);
-        return 0;
-    case WM_MOUSEWHEEL: {
-        POINT p = {short(LOWORD(lp)), short(HIWORD(lp))};
-        ScreenToClient(h, &p);
-        postInput(msg, wp, MAKELPARAM(p.x, p.y));
-        return 0;
-    }
-    case WM_APP_TITLE: {
-        std::wstring title;
-        {
-            std::lock_guard<std::mutex> lock(inputLock);
-            title.swap(pendingTitle);
-        }
-        if (!title.empty()) SetWindowTextW(h, title.c_str());
-        return 0;
-    }
-    case WM_CLOSE:
-        stopRenderThread();
-        DestroyWindow(h);
         return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
@@ -587,13 +490,14 @@ int main(int argc, char** argv) {
     buildGroup();
     ShowWindow(app.hwnd, SW_SHOW);
 
-    renderThread = std::thread(renderLoop);
-
     MSG msg;
-    while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
+    for (;;) {
+        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) return 0;
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        if (IsIconic(app.hwnd)) { WaitMessage(); continue; }
+        frame();
     }
-    stopRenderThread();
-    return 0;
 }
