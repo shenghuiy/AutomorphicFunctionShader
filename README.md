@@ -8,6 +8,9 @@ Both renderers approximate the Poincaré series with a finite number of group el
 
 DirectX 12 renderer preview using 20,000 terms at 1400 × 1000 pixels.
 
+See [docs/background.md](docs/background.md) for the math: why `f` is invariant
+under the group, how the series is truncated, and how to read the colors.
+
 ## Native Windows renderer
 
 Requires Visual Studio or Build Tools with the MSVC x64 C++ toolchain, the Windows SDK, and a DirectX 12 GPU with double-precision shader support (Windows 10/11).
@@ -61,3 +64,4 @@ Use the on-screen controls to adjust the plot.
 - `native/shaders.h`: embedded HLSL compute and display shaders.
 - `native/build.bat`: native build script.
 - `index.html`: standalone browser implementation.
+- `docs/background.md`: mathematical background.
