@@ -26,6 +26,10 @@ struct ViewConstants {
 static_assert(sizeof(ViewConstants) == 64, "Must match the HLSL constant buffer");
 
 class DxRenderer {
+    // DWM can keep the last presented buffer (e.g. for Snap Assist and drag
+    // previews) while also showing the current one. With two buffers the next
+    // draw could then wait forever for a buffer only its own present releases.
+    static constexpr UINT BUFFERS = 3;
     ComPtr<ID3D12Device> device;
     ComPtr<ID3D12CommandQueue> queue;
     ComPtr<ID3D12CommandAllocator> allocator;
@@ -35,11 +39,13 @@ class DxRenderer {
     UINT64 fenceValue = 0;
     ComPtr<IDXGISwapChain3> swap;
     ComPtr<ID3D12DescriptorHeap> rtvHeap;
-    ComPtr<ID3D12Resource> back[2], acc, matF, matD, cursorReadback;
+    ComPtr<ID3D12Resource> back[BUFFERS], acc, matF, matD, cursorReadback;
     ComPtr<ID3D12RootSignature> root;
     ComPtr<ID3D12PipelineState> computeF, computeD, display;
     UINT rtvStride = 0, width = 0, height = 0;
     UINT lastBack = 0;
+    HANDLE frameLatency = nullptr;
+    static constexpr UINT SWAP_FLAGS = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 
     ComPtr<ID3D12Resource> buffer(UINT64 bytes, D3D12_HEAP_TYPE type,
                                  D3D12_RESOURCE_STATES state, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE) {
@@ -70,6 +76,9 @@ class DxRenderer {
         dxCheck(queue->Signal(fence.Get(), value), "Signal GPU fence");
         if (fence->GetCompletedValue() < value) {
             dxCheck(fence->SetEventOnCompletion(value, fenceEvent), "Wait for GPU fence");
+            // Never call this on the window thread: GPU writes to swap-chain
+            // buffers can wait on DWM, which in turn waits for that thread to
+            // process its messages (e.g. while the window is being snapped).
             if (WaitForSingleObject(fenceEvent, 30000) != WAIT_OBJECT_0)
                 fatal("GPU did not complete work within 30 seconds");
         }
@@ -111,8 +120,18 @@ class DxRenderer {
     }
 
 public:
-    ~DxRenderer() { if (fenceEvent) CloseHandle(fenceEvent); }
+    ~DxRenderer() {
+        // Let queued GPU work finish before the device is released.
+        if (queue && fence && fenceEvent && SUCCEEDED(queue->Signal(fence.Get(), ++fenceValue)) &&
+            fence->GetCompletedValue() < fenceValue &&
+            SUCCEEDED(fence->SetEventOnCompletion(fenceValue, fenceEvent)))
+            WaitForSingleObject(fenceEvent, 2000);
+        if (frameLatency) CloseHandle(frameLatency);
+        if (fenceEvent) CloseHandle(fenceEvent);
+    }
     bool ready() const { return acc != nullptr; }
+    // Signalled when the swap chain can accept another frame without blocking.
+    HANDLE frameReady() const { return frameLatency; }
     std::string initialize(HWND hwnd, UINT w, UINT h) {
         // Enable validation when the optional Windows Graphics Tools component is installed.
         ComPtr<ID3D12Debug> debug;
@@ -151,13 +170,17 @@ public:
         DXGI_SWAP_CHAIN_DESC1 sc = {};
         sc.Width=w; sc.Height=h; sc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;
         sc.SampleDesc.Count=1; sc.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        sc.BufferCount=2; sc.SwapEffect=DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        sc.BufferCount=BUFFERS; sc.SwapEffect=DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        sc.Flags=SWAP_FLAGS;
         ComPtr<IDXGISwapChain1> chain;
         dxCheck(factory->CreateSwapChainForHwnd(queue.Get(),hwnd,&sc,nullptr,nullptr,&chain), "Create swap chain");
         dxCheck(chain.As(&swap), "Get swap chain");
+        dxCheck(swap->SetMaximumFrameLatency(1), "Set frame latency");
+        frameLatency=swap->GetFrameLatencyWaitableObject();
+        if (!frameLatency) fatal("Cannot get swap chain waitable object");
         dxCheck(factory->MakeWindowAssociation(hwnd,DXGI_MWA_NO_ALT_ENTER), "Configure window association");
         D3D12_DESCRIPTOR_HEAP_DESC hd = {};
-        hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_RTV; hd.NumDescriptors=2;
+        hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_RTV; hd.NumDescriptors=BUFFERS;
         dxCheck(device->CreateDescriptorHeap(&hd,IID_PPV_ARGS(&rtvHeap)), "Create render target descriptors");
         rtvStride=device->GetDescriptorHandleIncrementSize(hd.Type);
 
@@ -197,9 +220,9 @@ public:
         if (!swap || (w==width && h==height)) return;
         wait();
         for (auto& b : back) b.Reset();
-        dxCheck(swap->ResizeBuffers(2,w,h,DXGI_FORMAT_R8G8B8A8_UNORM,0), "Resize swap chain");
+        dxCheck(swap->ResizeBuffers(BUFFERS,w,h,DXGI_FORMAT_R8G8B8A8_UNORM,SWAP_FLAGS), "Resize swap chain");
         auto handle=rtvHeap->GetCPUDescriptorHandleForHeapStart();
-        for (UINT i=0;i<2;++i) {
+        for (UINT i=0;i<BUFFERS;++i) {
             dxCheck(swap->GetBuffer(i,IID_PPV_ARGS(&back[i])), "Get back buffer");
             device->CreateRenderTargetView(back[i].Get(),nullptr,handle);
             handle.ptr+=rtvStride;
@@ -245,7 +268,9 @@ public:
         transition(acc.Get(),D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         finish();
     }
-    void present(bool vsync) { dxCheck(swap->Present(vsync ? 1 : 0,0), "Present frame"); wait(); }
+    // Frames are paced by frameReady(), so there is no blocking wait on the
+    // present itself; later GPU work still waits through wait().
+    void present(bool vsync) { dxCheck(swap->Present(vsync ? 1 : 0,0), "Present frame"); }
     void readPixel(UINT x, UINT y, double values[4]) {
         begin();
         transition(acc.Get(),D3D12_RESOURCE_STATE_UNORDERED_ACCESS,D3D12_RESOURCE_STATE_COPY_SOURCE);
