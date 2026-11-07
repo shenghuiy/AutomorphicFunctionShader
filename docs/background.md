@@ -103,9 +103,9 @@ C \approx 0.0718424 - 1.8193356\,i.
 $`B`$ and $`C`$ are chosen so that $`BC = (1 + 0.1i)^2 - 1`$, which makes
 $`\det g_1 = 1`$. For $`g_2`$, $`\det g_2 = (1.1 - i)(1.1 + i) - 1.1^2 = 1`$.
 
-- $`\operatorname{tr} g_1 = 2 + 0.2i`$ is not real, so $`g_1`$ is **loxodromic**:
+- $`\mathrm{tr}\, g_1 = 2 + 0.2i`$ is not real, so $`g_1`$ is **loxodromic**:
   it spirals points toward its attracting fixed point.
-- $`\operatorname{tr} g_2 = 2.2`$ is real and greater than 2, so $`g_2`$ is
+- $`\mathrm{tr}\, g_2 = 2.2`$ is real and greater than 2, so $`g_2`$ is
   **hyperbolic**: it moves points along circular arcs between its two fixed
   points.
 
