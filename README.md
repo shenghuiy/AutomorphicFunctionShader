@@ -4,6 +4,10 @@ Interactive domain coloring of the automorphic function
 `f(z) = P_{-1,-3}(z) / P_{0,-4}(z)` for a two-generator Kleinian group.
 Both renderers approximate the Poincaré series with a finite number of group elements.
 
+![Domain coloring of the automorphic function rendered with 20,000 group elements](docs/poincare.png)
+
+Native renderer preview using 20,000 terms at 1400 × 1000 pixels.
+
 ## Native Windows renderer
 
 Requires Visual Studio or Build Tools with the MSVC x64 C++ toolchain, and a GPU supporting OpenGL 4.3.
