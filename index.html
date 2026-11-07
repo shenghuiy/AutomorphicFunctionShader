@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poincaré Series Plot</title>
+<style>
+  :root {
+    --bg: #0b0c10; --panel: rgba(18,20,26,0.86); --fg: #e8e8ea; --muted: #9aa0aa; --accent: #7cc4ff; --line: rgba(255,255,255,0.12);
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: grab; touch-action: none; }
+  canvas.dragging { cursor: grabbing; }
+  #panel { position: fixed; top: 12px; left: 12px; width: 300px; max-width: calc(100vw - 32px); padding: 12px 14px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; backdrop-filter: blur(6px); }
+  #panel h1 { font-size: 14px; margin: 0 0 4px; font-weight: 600; }
+  #panel .formula { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  #panel label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 6px 0; }
+  #panel input[type=range] { width: 140px; }
+  #panel select { background: #1c1f27; color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 2px 4px; }
+  #panel button { background: #1c1f27; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  #panel button:hover { border-color: var(--accent); }
+  .stat { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; margin-top: 6px; white-space: pre; }
+  #bar { height: 3px; background: var(--line); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  #bar > div { height: 100%; width: 0; background: var(--accent); }
+  #toggle { position: fixed; top: 12px; right: 12px; }
+  #err { position: fixed; inset: 0; display: none; place-items: center; padding: 16px; text-align: center; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="panel">
+  <h1>f(z) = P<sub>−1,−3</sub>(z) / P<sub>0,−4</sub>(z)</h1>
+  <div class="formula">P<sub>k,l</sub>(z) = Σ<sub>g∈G</sub> (az+b)<sup>k</sup>(cz+d)<sup>l</sup>, G = ⟨g₁, g₂⟩</div>
+  <label>Group elements <span><input id="nTerms" type="range" min="3" max="5.3" step="0.05" value="4.3"> <span id="nTermsVal"></span></span></label>
+  <label>Plot
+    <select id="mode">
+      <option value="0">Enhanced phase portrait</option>
+      <option value="1">Phase only</option>
+      <option value="2">Modulus contours</option>
+      <option value="3">Re / Im grid</option>
+    </select>
+  </label>
+  <label>Function
+    <select id="func">
+      <option value="0">f = P₋₁,₋₃ / P₀,₋₄</option>
+      <option value="1">P₀,₋₄ (automorphic form)</option>
+      <option value="2">P₋₁,₋₃ (automorphic form)</option>
+    </select>
+  </label>
+  <label>Contour density <input id="dens" type="range" min="0.25" max="4" step="0.05" value="1"></label>
+  <label>Resolution
+    <select id="res">
+      <option value="0.5">0.5×</option>
+      <option value="1" selected>1×</option>
+      <option value="2">2× (supersample)</option>
+    </select>
+  </label>
+  <div style="display:flex; gap:6px; margin-top:8px;">
+    <button id="reset">Reset view</button>
+    <button id="check">Check invariance</button>
+  </div>
+  <div id="bar"><div></div></div>
+  <div class="stat" id="stat"></div>
+  <div class="stat" id="cursor"></div>
+  <div class="stat" id="inv"></div>
+</div>
+<button id="toggle" style="background:#1c1f27;color:#e8e8ea;border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px 10px;cursor:pointer">Hide panel</button>
+<div id="err"></div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------------------
+// Complex arithmetic (double precision, CPU side)
+// ---------------------------------------------------------------------------
+const C = (re, im = 0) => [re, im];
+const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
+const mul = (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]];
+const div = (a, b) => { const d = b[0] * b[0] + b[1] * b[1]; return [(a[0] * b[0] + a[1] * b[1]) / d, (a[1] * b[0] - a[0] * b[1]) / d]; };
+const abs2 = a => a[0] * a[0] + a[1] * a[1];
+const neg = a => [-a[0], -a[1]];
+
+// Matrix [a,b,c,d] of complex numbers
+const mmul = (P, Q) => [
+  add(mul(P[0], Q[0]), mul(P[1], Q[2])), add(mul(P[0], Q[1]), mul(P[1], Q[3])),
+  add(mul(P[2], Q[0]), mul(P[3], Q[2])), add(mul(P[2], Q[1]), mul(P[3], Q[3])),
+];
+const minv = M => [M[3], neg(M[1]), neg(M[2]), M[0]]; // det = 1
+const mnorm2 = M => abs2(M[0]) + abs2(M[1]) + abs2(M[2]) + abs2(M[3]);
+const mobius = (M, z) => div(add(mul(M[0], z), M[1]), add(mul(M[2], z), M[3]));
+
+// ---------------------------------------------------------------------------
+// Generators from the text
+// ---------------------------------------------------------------------------
+const b = C(-0.10997580175045825, -0.0011537600196144);
+const c = C(0.07184238006772357, -1.8193355782014326);
+const g1 = [C(1, 0.1), b, c, C(1, 0.1)];
+const g2 = [C(1.1, -1), C(1.1), C(1.1), C(1.1, 1)];
+const GENS = [g1, minv(g1), g2, minv(g2)]; // g1, G1, g2, G2
+const INV = [1, 0, 3, 2];
+
+// Enumerate reduced words in order of increasing Frobenius norm (min-heap).
+// Every group element appears once (G is free on g1, g2).
+function enumerate(N) {
+  const heap = []; // entries: {M, n2, last}
+  const push = e => { heap.push(e); let i = heap.length - 1;
+    while (i > 0) { const p = (i - 1) >> 1; if (heap[p].n2 <= heap[i].n2) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop();
+    if (heap.length) { heap[0] = last; let i = 0;
+      for (;;) { const l = 2 * i + 1, r = l + 1; let m = i;
+        if (l < heap.length && heap[l].n2 < heap[m].n2) m = l;
+        if (r < heap.length && heap[r].n2 < heap[m].n2) m = r;
+        if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } }
+    return top; };
+  const I = [C(1), C(0), C(0), C(1)];
+  push({ M: I, n2: 2, last: -1 });
+  const out = [];
+  while (out.length < N && heap.length) {
+    const e = pop();
+    out.push(e.M);
+    for (let k = 0; k < 4; k++) {
+      if (e.last >= 0 && k === INV[e.last]) continue;
+      const M = mmul(GENS[k], e.M);
+      push({ M, n2: mnorm2(M), last: k });
+    }
+  }
+  return out;
+}
+
+// CPU evaluation of the Poincaré series (used for cursor readout + invariance check)
+function evalSeries(mats, z) {
+  let P1 = [0, 0], P2 = [0, 0];
+  for (const M of mats) {
+    const w1 = add(mul(M[0], z), M[1]);
+    const w2 = add(mul(M[2], z), M[3]);
+    const w2s = mul(w2, w2);
+    P2 = add(P2, div([1, 0], mul(w2s, w2s)));
+    P1 = add(P1, div([1, 0], mul(w1, mul(w2s, w2))));
+  }
+  return { P1, P2, f: div(P1, P2) };
+}
+
+// ---------------------------------------------------------------------------
+// WebGL2 setup
+// ---------------------------------------------------------------------------
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
+function fail(msg) { const e = document.getElementById('err'); e.style.display = 'grid'; e.textContent = msg; throw new Error(msg); }
+if (!gl) fail('WebGL2 is not available in this browser.');
+if (!gl.getExtension('EXT_color_buffer_float')) fail('EXT_color_buffer_float is required (float render targets).');
+
+const GPU_NAME = (() => {
+  const ext = gl.getExtension('WEBGL_debug_renderer_info');
+  const r = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+  const m = /ANGLE \([^,]*,\s*(.+?)(?:\s*\(0x[0-9A-Fa-f]+\)|\s+Direct3D|,)/.exec(r); // "ANGLE (Vendor, Device Name (0x..) ..." -> Device Name
+  return (m ? m[1] : r).trim();
+})();
+const CHUNK = 256;
+const VS = `#version 300 es
+in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
+
+// Accumulation pass: adds CHUNK terms of both series into an RGBA32F buffer.
+// rg = P_{-1,-3}(z) = Σ 1/((az+b)(cz+d)^3),  ba = P_{0,-4}(z) = Σ 1/(cz+d)^4
+const ACC_FS = `#version 300 es
+precision highp float; precision highp int; precision highp sampler2D;
+uniform sampler2D uMats, uPrev;
+uniform int uStart, uCount, uTexW;
+uniform vec2 uCenter, uRes;
+uniform float uScale;
+out vec4 o;
+vec2 cm(vec2 a, vec2 b){ return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
+vec2 cinv(vec2 a){
+  // scaled reciprocal to avoid overflow in |a|^2
+  float s = max(abs(a.x), abs(a.y));
+  if (s == 0.0) return vec2(1e30, 0.0);
+  vec2 t = a / s;
+  return vec2(t.x, -t.y) / (dot(t, t) * s);
+}
+void main(){
+  ivec2 px = ivec2(gl_FragCoord.xy);
+  vec4 acc = texelFetch(uPrev, px, 0);
+  vec2 z = uCenter + (gl_FragCoord.xy - 0.5 * uRes) * uScale;
+  for (int i = 0; i < ${CHUNK}; i++) {
+    int idx = uStart + i;
+    if (idx >= uCount) break;
+    int t = 2 * idx;
+    vec4 ab = texelFetch(uMats, ivec2(t % uTexW, t / uTexW), 0);
+    vec4 cd = texelFetch(uMats, ivec2((t + 1) % uTexW, t / uTexW), 0);
+    vec2 w1 = cm(ab.xy, z) + ab.zw;
+    vec2 w2 = cm(cd.xy, z) + cd.zw;
+    vec2 i2 = cinv(w2);
+    vec2 i2s = cm(i2, i2);
+    vec2 i3 = cm(i2s, i2);
+    acc.xy += cm(cinv(w1), i3);
+    acc.zw += cm(i2s, i2s);
+  }
+  o = acc;
+}`;
+
+// Display pass: domain colouring of the selected function.
+const DISP_FS = `#version 300 es
+precision highp float; precision highp sampler2D;
+uniform sampler2D uAcc;
+uniform int uMode, uFunc;
+uniform float uDens;
+uniform vec2 uCenter, uRes;
+uniform float uScale;
+out vec4 o;
+const float PI = 3.14159265358979;
+vec2 cdiv(vec2 a, vec2 b){
+  float s = max(abs(b.x), abs(b.y)); a /= s; b /= s;
+  return vec2(a.x*b.x + a.y*b.y, a.y*b.x - a.x*b.y) / dot(b, b);
+}
+vec3 hsv(float h, float s, float v){
+  vec3 k = clamp(abs(mod(h*6.0 + vec3(0,4,2), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+  return v * mix(vec3(1.0), k*k*(3.0-2.0*k), s);
+}
+// smooth sawtooth with screen-space anti-aliasing
+float saw(float x){ float f = fract(x); float w = fwidth(x); return mix(f, 0.5, smoothstep(0.3, 0.8, w)); }
+float gridline(float x){ float w = max(fwidth(x), 1e-6); float d = abs(fract(x - 0.5) - 0.5) / w; return 1.0 - smoothstep(0.0, 1.2, d); }
+void main(){
+  vec4 a = texelFetch(uAcc, ivec2(gl_FragCoord.xy), 0);
+  vec2 f = uFunc == 0 ? cdiv(a.xy, a.zw) : (uFunc == 1 ? a.zw : a.xy);
+  if (any(isnan(f)) ) { o = vec4(1.0); return; }
+  float arg = atan(f.y, f.x);
+  float h = fract(arg / (2.0*PI));
+  float lm = log2(max(length(f), 1e-30));
+  vec3 base = hsv(h, 0.9, 1.0);
+  vec3 col;
+  if (uMode == 0) {
+    float m = saw(lm * uDens);
+    float p = saw(h * 12.0 * uDens);
+    col = base * (0.55 + 0.45 * sqrt(m * p));
+  } else if (uMode == 1) {
+    col = base;
+  } else if (uMode == 2) {
+    col = base * (0.45 + 0.55 * saw(lm * uDens));
+  } else {
+    float s = exp2(-floor(lm));             // adaptive grid spacing
+    float g = max(gridline(f.x * s * 4.0 * uDens), gridline(f.y * s * 4.0 * uDens));
+    col = mix(base * 0.95, vec3(0.05), 0.75 * g);
+  }
+  // fade where the value blows up (poles) / vanishes (zeros)
+  col *= mix(1.0, 0.0, smoothstep(14.0, 24.0, abs(lm)) );
+  o = vec4(pow(col, vec3(1.0/1.1)), 1.0);
+}`;
+
+function compile(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) fail(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.bindAttribLocation(p, 0, 'p');
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) fail(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+  return { p, u };
+}
+const accProg = program(ACC_FS);
+const dispProg = program(DISP_FS);
+
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+const vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+function floatTex(w, h, data = null) {
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, data);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  return t;
+}
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+const TEXW = 4096;
+let mats = [], matTex = null, count = 0;
+let accTex = [null, null], fbo = [gl.createFramebuffer(), gl.createFramebuffer()], ping = 0;
+let W = 0, H = 0, done = 0, passesPerFrame = 2;
+const DEFAULT_VIEW = { cx: 0, cy: -0.35, scale: 0 };
+let view = { ...DEFAULT_VIEW };
+const ui = id => document.getElementById(id);
+
+function buildGroup() {
+  const N = Math.round(Math.pow(10, +ui('nTerms').value));
+  ui('nTermsVal').textContent = N.toLocaleString();
+  mats = enumerate(N); count = mats.length;
+  const rows = Math.ceil(2 * count / TEXW);
+  const data = new Float32Array(TEXW * rows * 4);
+  mats.forEach((M, i) => {
+    data.set([M[0][0], M[0][1], M[1][0], M[1][1], M[2][0], M[2][1], M[3][0], M[3][1]], 8 * i);
+  });
+  if (matTex) gl.deleteTexture(matTex);
+  matTex = floatTex(TEXW, rows, data);
+  const maxN = Math.sqrt(mnorm2(mats[mats.length - 1]));
+  ui('stat').dataset.norm = maxN.toFixed(1);
+  restart();
+}
+
+function resize() {
+  const s = (window.devicePixelRatio || 1) * +ui('res').value;
+  const w = Math.max(1, Math.round(innerWidth * s)), h = Math.max(1, Math.round(innerHeight * s));
+  if (w === W && h === H) return;
+  // keep the visible region when the canvas size changes
+  if (view.scale && W && H) view.scale *= Math.min(W, H) / Math.min(w, h);
+  W = canvas.width = w; H = canvas.height = h;
+  for (let i = 0; i < 2; i++) {
+    if (accTex[i]) gl.deleteTexture(accTex[i]);
+    accTex[i] = floatTex(W, H);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[i]);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, accTex[i], 0);
+  }
+  if (!view.scale) view.scale = 5.0 / Math.min(W, H);
+  restart();
+}
+
+function restart() {
+  for (let i = 0; i < 2; i++) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[i]);
+    gl.viewport(0, 0, W, H); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+  done = 0;
+}
+
+let lastT = performance.now();
+function frame(t) {
+  const dt = t - lastT; lastT = t;
+  if (done < count) {
+    // adapt the amount of work per frame to keep the UI responsive
+    if (dt < 22) passesPerFrame = Math.min(64, passesPerFrame + 1);
+    else if (dt > 40) passesPerFrame = Math.max(1, passesPerFrame - 1);
+    gl.useProgram(accProg.p);
+    gl.uniform1i(accProg.u.uMats, 0); gl.uniform1i(accProg.u.uPrev, 1);
+    gl.uniform1i(accProg.u.uCount, count); gl.uniform1i(accProg.u.uTexW, TEXW);
+    gl.uniform2f(accProg.u.uCenter, view.cx, view.cy); gl.uniform2f(accProg.u.uRes, W, H);
+    gl.uniform1f(accProg.u.uScale, view.scale);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, matTex);
+    for (let k = 0; k < passesPerFrame && done < count; k++) {
+      gl.uniform1i(accProg.u.uStart, done);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, accTex[ping]);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[1 - ping]);
+      gl.viewport(0, 0, W, H);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      ping = 1 - ping; done += CHUNK;
+    }
+    done = Math.min(done, count);
+  }
+  // display
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(dispProg.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, accTex[ping]);
+  gl.uniform1i(dispProg.u.uAcc, 0);
+  gl.uniform1i(dispProg.u.uMode, +ui('mode').value);
+  gl.uniform1i(dispProg.u.uFunc, +ui('func').value);
+  gl.uniform1f(dispProg.u.uDens, +ui('dens').value);
+  gl.uniform2f(dispProg.u.uCenter, view.cx, view.cy); gl.uniform2f(dispProg.u.uRes, W, H);
+  gl.uniform1f(dispProg.u.uScale, view.scale);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  ui('bar').firstElementChild.style.width = (100 * done / count).toFixed(1) + '%';
+  ui('stat').textContent =
+    `terms summed  ${done.toLocaleString()} / ${count.toLocaleString()}  (‖g‖ ≤ ${ui('stat').dataset.norm})\n` +
+    `gpu           ${GPU_NAME}\n` +
+    `view          ${view.cx.toFixed(4)} ${view.cy >= 0 ? '+' : '−'} ${Math.abs(view.cy).toFixed(4)}i, width ${(view.scale * W).toPrecision(3)}`;
+  requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------------------
+// Interaction
+// ---------------------------------------------------------------------------
+const toZ = (x, y) => { const s = W / canvas.clientWidth;
+  return [view.cx + (x * s - 0.5 * W) * view.scale, view.cy + ((canvas.clientHeight - y) * s - 0.5 * H) * view.scale]; };
+const fmt = z => `${z[0].toPrecision(5)} ${z[1] >= 0 ? '+' : '−'} ${Math.abs(z[1]).toPrecision(5)}i`;
+
+const pointers = new Map(); let pinchD = 0;
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); canvas.classList.add('dragging'); });
+canvas.addEventListener('pointerup', e => { pointers.delete(e.pointerId); pinchD = 0; if (!pointers.size) canvas.classList.remove('dragging'); });
+canvas.addEventListener('pointercancel', e => { pointers.delete(e.pointerId); pinchD = 0; });
+canvas.addEventListener('pointermove', e => {
+  if (pointers.has(e.pointerId)) {
+    const [px, py] = pointers.get(e.pointerId);
+    const s = W / canvas.clientWidth;
+    if (pointers.size === 1) {
+      view.cx -= (e.clientX - px) * s * view.scale;
+      view.cy += (e.clientY - py) * s * view.scale;
+    }
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (pinchD) zoomAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, pinchD / d);
+      pinchD = d;
+    }
+    restart();
+  }
+  hover(e.clientX, e.clientY);
+});
+function zoomAt(x, y, k) {
+  const z0 = toZ(x, y); view.scale *= k; const z1 = toZ(x, y);
+  view.cx += z0[0] - z1[0]; view.cy += z0[1] - z1[1];
+}
+canvas.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(e.deltaY * 0.0015)); restart(); }, { passive: false });
+
+let hoverTimer = 0;
+function hover(x, y) {
+  clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(() => {
+    const z = toZ(x, y);
+    const sub = mats.length > 20000 ? mats.slice(0, 20000) : mats;
+    const { f } = evalSeries(sub, z);
+    ui('cursor').textContent = `z             ${fmt(z)}\nf(z)          ${fmt(f)}`;
+  }, 30);
+}
+
+ui('check').onclick = () => {
+  // f(g(z)) should equal f(z) for every generator, up to truncation error
+  const z = [0.3, 0.6];
+  const fz = evalSeries(mats, z).f;
+  const lines = [`f(z₀), z₀=0.3+0.6i  ${fmt(fz)}`];
+  ['g₁', 'g₁⁻¹', 'g₂', 'g₂⁻¹'].forEach((nm, k) => {
+    const fg = evalSeries(mats, mobius(GENS[k], z)).f;
+    const err = Math.sqrt(abs2(add(fg, neg(fz)))) / Math.sqrt(abs2(fz));
+    lines.push(`f(${nm}(z₀))`.padEnd(14) + `${fmt(fg)}   rel.err ${err.toExponential(1)}`);
+  });
+  ui('inv').textContent = lines.join('\n');
+};
+ui('reset').onclick = () => { view = { ...DEFAULT_VIEW, scale: 5.0 / Math.min(W, H) }; restart(); };
+ui('nTerms').oninput = () => { ui('nTermsVal').textContent = Math.round(Math.pow(10, +ui('nTerms').value)).toLocaleString(); };
+ui('nTerms').onchange = buildGroup;
+ui('res').onchange = () => { W = 0; resize(); };
+ui('toggle').onclick = () => { const p = ui('panel'); const hide = p.style.display !== 'none'; p.style.display = hide ? 'none' : ''; ui('toggle').textContent = hide ? 'Show panel' : 'Hide panel'; };
+addEventListener('resize', resize);
+
+resize();
+buildGroup();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

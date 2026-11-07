@@ -1,0 +1,6 @@
+# Native build outputs
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.idb
