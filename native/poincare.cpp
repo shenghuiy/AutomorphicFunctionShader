@@ -41,7 +41,10 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 
 static void fatal(const char* msg) {
     std::fprintf(stderr, "\nERROR: %s\n", msg);
-    std::exit(1);
+    std::fflush(nullptr);
+    // std::exit would run static destructors that release D3D objects while
+    // GPU work may still be stuck, which can hang the process on the way out.
+    TerminateProcess(GetCurrentProcess(), 1);
 }
 
 #include "dx12.h"

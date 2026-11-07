@@ -79,7 +79,9 @@ float gridline(float x) {
     return 1.0-smoothstep(0.0,1.2,abs(frac(x-0.5)-0.5)/max(fwidth(x),1e-6));
 }
 float4 pixel(float4 position : SV_Position) : SV_Target {
-    uint2 p=(uint2)position.xy;
+    // Clamp: quads on the bottom/right edge run helper lanes (needed for
+    // fwidth) one pixel outside the target, which would read past acc.
+    uint2 p=min((uint2)position.xy,uint2(uW-1,uH-1));
     double4 a=acc[p.y*uW+p.x];
     double2 fd=uFunc==0 ? cdiv(a.xy,a.zw) : (uFunc==1 ? a.zw : a.xy);
     double s=max(abs(fd.x),abs(fd.y));
