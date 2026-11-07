@@ -1,10 +1,10 @@
-// Native OpenGL 4.3 renderer for the automorphic function
+// Native DirectX 12 renderer for the automorphic function
 //     f(z) = P_{-1,-3}(z) / P_{0,-4}(z),   P_{k,l}(z) = sum_{g in G} (az+b)^k (cz+d)^l
 // for the Kleinian group G = <g1, g2>.
 //
 // The Poincaré series are summed per pixel in a compute shader (fp32 or fp64),
 // accumulated progressively in a double-precision buffer, and displayed with
-// domain colouring. No external dependencies: Win32 + WGL + opengl32.lib.
+// domain colouring. No external dependencies: Win32 + DirectX 12 + the Windows SDK.
 //
 // Controls
 //   drag            pan                 wheel        zoom about cursor
@@ -19,14 +19,16 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
-#include <GL/gl.h>
 
 #include <algorithm>
 #include <chrono>
+#include <cerrno>
 #include <cmath>
 #include <complex>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <limits>
 #include <queue>
 #include <string>
 #include <vector>
@@ -37,82 +39,13 @@ __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
 __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 }
 
-// ---------------------------------------------------------------------------
-// Minimal OpenGL 4.3 loader
-// ---------------------------------------------------------------------------
-typedef char GLchar;
-typedef ptrdiff_t GLsizeiptr;
-typedef ptrdiff_t GLintptr;
-
-#define GL_FRAGMENT_SHADER 0x8B30
-#define GL_VERTEX_SHADER 0x8B31
-#define GL_COMPUTE_SHADER 0x91B9
-#define GL_COMPILE_STATUS 0x8B81
-#define GL_LINK_STATUS 0x8B82
-#define GL_INFO_LOG_LENGTH 0x8B84
-#define GL_SHADER_STORAGE_BUFFER 0x90D2
-#define GL_SHADER_STORAGE_BARRIER_BIT 0x00002000
-#define GL_STATIC_DRAW 0x88E4
-#define GL_DYNAMIC_COPY 0x88EA
-#define GL_R32UI 0x8236
-#define GL_RED_INTEGER 0x8D94
-
-#define WGL_CONTEXT_MAJOR_VERSION_ARB 0x2091
-#define WGL_CONTEXT_MINOR_VERSION_ARB 0x2092
-#define WGL_CONTEXT_PROFILE_MASK_ARB 0x9126
-#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB 0x00000001
-
-#define GL_FUNCS(X)                                                                         \
-    X(GLuint, glCreateShader, (GLenum))                                                     \
-    X(void, glShaderSource, (GLuint, GLsizei, const GLchar* const*, const GLint*))          \
-    X(void, glCompileShader, (GLuint))                                                      \
-    X(void, glGetShaderiv, (GLuint, GLenum, GLint*))                                        \
-    X(void, glGetShaderInfoLog, (GLuint, GLsizei, GLsizei*, GLchar*))                       \
-    X(GLuint, glCreateProgram, (void))                                                      \
-    X(void, glAttachShader, (GLuint, GLuint))                                               \
-    X(void, glLinkProgram, (GLuint))                                                        \
-    X(void, glGetProgramiv, (GLuint, GLenum, GLint*))                                       \
-    X(void, glGetProgramInfoLog, (GLuint, GLsizei, GLsizei*, GLchar*))                      \
-    X(void, glDeleteShader, (GLuint))                                                       \
-    X(void, glDeleteProgram, (GLuint))                                                      \
-    X(void, glUseProgram, (GLuint))                                                         \
-    X(GLint, glGetUniformLocation, (GLuint, const GLchar*))                                 \
-    X(void, glUniform1i, (GLint, GLint))                                                    \
-    X(void, glUniform1f, (GLint, GLfloat))                                                  \
-    X(void, glUniform1d, (GLint, GLdouble))                                                 \
-    X(void, glUniform2d, (GLint, GLdouble, GLdouble))                                       \
-    X(void, glGenBuffers, (GLsizei, GLuint*))                                               \
-    X(void, glDeleteBuffers, (GLsizei, const GLuint*))                                      \
-    X(void, glBindBuffer, (GLenum, GLuint))                                                 \
-    X(void, glBufferData, (GLenum, GLsizeiptr, const void*, GLenum))                        \
-    X(void, glBindBufferBase, (GLenum, GLuint, GLuint))                                     \
-    X(void, glClearBufferData, (GLenum, GLenum, GLenum, GLenum, const void*))               \
-    X(void, glGetBufferSubData, (GLenum, GLintptr, GLsizeiptr, void*))                      \
-    X(void, glDispatchCompute, (GLuint, GLuint, GLuint))                                    \
-    X(void, glMemoryBarrier, (GLbitfield))                                                  \
-    X(void, glGenVertexArrays, (GLsizei, GLuint*))                                          \
-    X(void, glBindVertexArray, (GLuint))
-
-#define DECLARE_GL(ret, name, args) \
-    typedef ret(APIENTRY* PFN_##name) args; \
-    static PFN_##name name = nullptr;
-GL_FUNCS(DECLARE_GL)
-
-typedef HGLRC(WINAPI* PFN_wglCreateContextAttribsARB)(HDC, HGLRC, const int*);
-typedef BOOL(WINAPI* PFN_wglSwapIntervalEXT)(int);
-
 static void fatal(const char* msg) {
     std::fprintf(stderr, "\nERROR: %s\n", msg);
-    MessageBoxA(nullptr, msg, "Poincaré series", MB_ICONERROR);
     std::exit(1);
 }
 
-static void loadGL() {
-#define LOAD_GL(ret, name, args)                                      \
-    name = (PFN_##name)wglGetProcAddress(#name);                      \
-    if (!name) fatal("OpenGL 4.3 function missing: " #name);
-    GL_FUNCS(LOAD_GL)
-}
+#include "dx12.h"
+static DxRenderer renderer;
 
 // ---------------------------------------------------------------------------
 // Group: generators and enumeration of reduced words by matrix norm
@@ -173,152 +106,6 @@ static Series evalSeries(const std::vector<Mat>& mats, cd z) {
 }
 
 // ---------------------------------------------------------------------------
-// Shaders
-// ---------------------------------------------------------------------------
-static const char* COMPUTE_SRC = R"GLSL(
-layout(local_size_x = 16, local_size_y = 16) in;
-#define TILE 256
-layout(std430, binding = 0) readonly buffer Mats { VEC4 mats[]; };  // (a, b), (c, d)
-layout(std430, binding = 1) buffer Acc { dvec4 acc[]; };            // (P_{-1,-3}, P_{0,-4})
-uniform int uStart, uEnd, uW, uH;
-uniform dvec2 uCenter;
-uniform double uScale;
-shared VEC4 tileM[2 * TILE];
-
-VEC2 cm(VEC2 a, VEC2 b) { return VEC2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }
-#ifdef FP64
-// fp64 range is ~1e308, so no scaling is needed; one division per term
-// (double division is emulated on NVIDIA GPUs and very expensive).
-VEC2 crecip(VEC2 q) { return VEC2(q.x, -q.y) * (1.0LF / dot(q, q)); }
-#else
-VEC2 crecip(VEC2 q) {  // scaled 1/q, avoids overflow of |q|^2 in fp32
-    REAL rs = 1.0 / max(abs(q.x), abs(q.y));
-    VEC2 t = q * rs;
-    return VEC2(t.x, -t.y) * (rs / dot(t, t));
-}
-#endif
-
-void main() {
-    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
-    bool inside = p.x < uW && p.y < uH;
-    VEC2 z = VEC2(uCenter + (dvec2(p) + 0.5 - 0.5 * dvec2(uW, uH)) * uScale);
-    VEC4 sum = VEC4(0);
-    int lid = int(gl_LocalInvocationIndex);
-    for (int base = uStart; base < uEnd; base += TILE) {
-        int n = min(TILE, uEnd - base);
-        if (lid < n) {
-            tileM[2 * lid] = mats[2 * (base + lid)];
-            tileM[2 * lid + 1] = mats[2 * (base + lid) + 1];
-        }
-        barrier();
-        if (inside) {
-            for (int i = 0; i < n; i++) {
-                VEC4 ab = tileM[2 * i], cd = tileM[2 * i + 1];
-                VEC2 w1 = cm(ab.xy, z) + ab.zw;  // az + b
-                VEC2 w2 = cm(cd.xy, z) + cd.zw;  // cz + d
-                VEC2 w2s = cm(w2, w2);
-                VEC2 r = crecip(cm(w1, cm(w2s, w2s)));  // 1 / ((az+b)(cz+d)^4)
-                sum += VEC4(cm(w2, r), cm(w1, r));
-            }
-        }
-        barrier();
-    }
-    if (inside) acc[p.y * uW + p.x] += dvec4(sum);
-}
-)GLSL";
-
-static const char* VERT_SRC = R"GLSL(
-#version 430
-void main() {
-    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}
-)GLSL";
-
-static const char* FRAG_SRC = R"GLSL(
-#version 430
-layout(std430, binding = 1) readonly buffer Acc { dvec4 acc[]; };
-uniform int uW, uH, uMode, uFunc;
-uniform float uDens;
-out vec4 o;
-const float PI = 3.14159265358979;
-
-dvec2 cdiv(dvec2 a, dvec2 b) {
-    double s = max(abs(b.x), abs(b.y));
-    a /= s; b /= s;
-    return dvec2(a.x * b.x + a.y * b.y, a.y * b.x - a.x * b.y) / dot(b, b);
-}
-vec3 hsv(float h, float s, float v) {
-    vec3 k = clamp(abs(mod(h * 6.0 + vec3(0, 4, 2), 6.0) - 3.0) - 1.0, 0.0, 1.0);
-    return v * mix(vec3(1.0), k * k * (3.0 - 2.0 * k), s);
-}
-float saw(float x) { float w = fwidth(x); return mix(fract(x), 0.5, smoothstep(0.3, 0.8, w)); }
-float gridline(float x) {
-    float w = max(fwidth(x), 1e-6);
-    return 1.0 - smoothstep(0.0, 1.2, abs(fract(x - 0.5) - 0.5) / w);
-}
-
-void main() {
-    ivec2 p = ivec2(gl_FragCoord.xy);
-    dvec4 a = acc[p.y * uW + p.x];
-    dvec2 fd = uFunc == 0 ? cdiv(a.xy, a.zw) : (uFunc == 1 ? a.zw : a.xy);
-    double s = max(abs(fd.x), abs(fd.y));
-    if (!(s > 0.0) || isinf(s) || isnan(s)) { o = vec4(0, 0, 0, 1); return; }
-    vec2 dir = vec2(fd / s);                       // safe to convert to float
-    float lm = log2(float(s)) + 0.5 * log2(dot(dir, dir));
-    if (isinf(float(s))) lm = 128.0;
-    float h = fract(atan(dir.y, dir.x) / (2.0 * PI));
-    vec3 base = hsv(h, 0.9, 1.0);
-    vec3 col;
-    if (uMode == 0) {
-        col = base * (0.55 + 0.45 * sqrt(saw(lm * uDens) * saw(h * 12.0 * uDens)));
-    } else if (uMode == 1) {
-        col = base;
-    } else if (uMode == 2) {
-        col = base * (0.45 + 0.55 * saw(lm * uDens));
-    } else {
-        // f / 2^floor(log2|f|): grid spacing adapts to the magnitude of f
-        vec2 fs = dir * exp2(log2(float(s)) - floor(lm)) * 4.0 * uDens;
-        float g = max(gridline(fs.x), gridline(fs.y));
-        col = mix(base * 0.95, vec3(0.05), 0.75 * g);
-    }
-    col *= 1.0 - smoothstep(14.0, 24.0, abs(lm));   // fade at poles / zeros
-    o = vec4(pow(col, vec3(1.0 / 1.1)), 1.0);
-}
-)GLSL";
-
-static GLuint compile(GLenum type, const std::string& src) {
-    GLuint s = glCreateShader(type);
-    const char* p = src.c_str();
-    glShaderSource(s, 1, &p, nullptr);
-    glCompileShader(s);
-    GLint ok = 0;
-    glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char log[8192];
-        glGetShaderInfoLog(s, sizeof log, nullptr, log);
-        std::fprintf(stderr, "%s\n", log);
-        fatal("shader compilation failed (see console)");
-    }
-    return s;
-}
-static GLuint link(std::initializer_list<GLuint> shaders) {
-    GLuint p = glCreateProgram();
-    for (GLuint s : shaders) glAttachShader(p, s);
-    glLinkProgram(p);
-    GLint ok = 0;
-    glGetProgramiv(p, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        char log[8192];
-        glGetProgramInfoLog(p, sizeof log, nullptr, log);
-        std::fprintf(stderr, "%s\n", log);
-        fatal("program link failed (see console)");
-    }
-    for (GLuint s : shaders) glDeleteShader(s);
-    return p;
-}
-
-// ---------------------------------------------------------------------------
 // PNG writer (uncompressed deflate, no dependencies)
 // ---------------------------------------------------------------------------
 static uint32_t crc32(const uint8_t* d, size_t n, uint32_t c = 0xFFFFFFFFu) {
@@ -349,8 +136,8 @@ static bool writePNG(const char* path, int w, int h, const std::vector<uint8_t>&
         size_t n = std::min<size_t>(65535, raw.size() - off);
         bool last = off + n >= raw.size();
         z.push_back(last ? 1 : 0);
-        z.push_back(n & 0xFF); z.push_back(n >> 8);
-        z.push_back(~n & 0xFF); z.push_back((~n >> 8) & 0xFF);
+        z.push_back(uint8_t(n & 0xFF)); z.push_back(uint8_t(n >> 8));
+        z.push_back(uint8_t(~n & 0xFF)); z.push_back(uint8_t((~n >> 8) & 0xFF));
         z.insert(z.end(), raw.begin() + off, raw.begin() + off + n);
         if (last) break;
     }
@@ -386,7 +173,6 @@ static double msSince(Clock::time_point t) { return std::chrono::duration<double
 
 struct App {
     HWND hwnd = nullptr;
-    HDC hdc = nullptr;
     int W = 0, H = 0;
     double cx = 0.0, cy = -0.35, span = 5.0;  // span = width of the shorter screen side in z-units
     size_t N = size_t(1) << 17;
@@ -395,8 +181,6 @@ struct App {
     float dens = 1.0f;
 
     std::vector<Mat> mats;
-    GLuint matF = 0, matD = 0, acc = 0, vao = 0;
-    GLuint progF = 0, progD = 0, progDisp = 0;
     int count = 0, done = 0, chunk = 256;
     Clock::time_point startT;
     double renderMs = 0;
@@ -416,10 +200,6 @@ struct App {
 static App app;
 
 static void restart() {
-    if (!app.acc) return;
-    GLuint zero = 0;
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, app.acc);
-    glClearBufferData(GL_SHADER_STORAGE_BUFFER, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, &zero);
     app.done = 0;
     app.startT = Clock::now();
 }
@@ -435,10 +215,7 @@ static void buildGroup() {
         double v[8] = {m.a.real(), m.a.imag(), m.b.real(), m.b.imag(), m.c.real(), m.c.imag(), m.d.real(), m.d.imag()};
         for (int k = 0; k < 8; k++) { d[8 * i + k] = v[k]; f[8 * i + k] = float(v[k]); }
     }
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, app.matF);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, f.size() * sizeof(float), f.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, app.matD);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, d.size() * sizeof(double), d.data(), GL_STATIC_DRAW);
+    renderer.matrices(f, d);
     std::printf("group: %d elements, max ||g|| = %.1f  (enumerated in %.0f ms)\n", app.count,
                 std::sqrt(norm2(app.mats.back())), msSince(t0));
     restart();
@@ -448,8 +225,7 @@ static void resize(int w, int h) {
     if (w <= 0 || h <= 0 || (w == app.W && h == app.H)) return;
     app.W = w;
     app.H = h;
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, app.acc);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, GLsizeiptr(w) * h * 4 * sizeof(double), nullptr, GL_DYNAMIC_COPY);
+    renderer.resize(w, h);
     restart();
 }
 
@@ -469,9 +245,8 @@ static void updateTitle() {
     app.titleT = Clock::now();
     // read the accumulated sums under the cursor straight from the GPU buffer
     double a[4] = {0, 0, 0, 0};
-    int px = std::clamp(app.mx, 0, app.W - 1), py = std::clamp(app.H - 1 - app.my, 0, app.H - 1);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, app.acc);
-    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, GLintptr(size_t(py) * app.W + px) * 4 * sizeof(double), sizeof a, a);
+    int px = std::clamp(app.mx, 0, app.W - 1), py = std::clamp(app.my, 0, app.H - 1);
+    renderer.readPixel(px, py, a);
     cd P1(a[0], a[1]), P2(a[2], a[3]);
     cd val = app.func == 0 ? P1 / P2 : (app.func == 1 ? P2 : P1);
     cd z = app.toZ(app.mx, app.my);
@@ -487,48 +262,52 @@ static void updateTitle() {
     SetWindowTextW(app.hwnd, wbuf);
 }
 
-static PFN_wglSwapIntervalEXT swapInterval = nullptr;
-static int currentInterval = -1;
 static std::string snapshotPath;  // --snapshot <file.png>: render to completion, save, exit
+static bool verifyGPU = false;
+
+static void verifyGpuValues() {
+    const int points[][2] = {{app.W/2,app.H/2}, {app.W/3,app.H/4}, {3*app.W/4,2*app.H/3}};
+    double worst = 0;
+    for (const auto& p : points) {
+        double sums[4];
+        renderer.readPixel(p[0],p[1],sums);
+        auto expected = evalSeries(app.mats,app.toZ(p[0],p[1]));
+        cd actual[] = {{sums[0],sums[1]},{sums[2],sums[3]}};
+        cd reference[] = {expected.P1,expected.P2};
+        for (int i=0;i<2;++i) {
+            double error=std::abs(actual[i]-reference[i])/std::max(1e-30,std::abs(reference[i]));
+            std::printf("GPU check (%d,%d) P%d: relative error %.3e\n",p[0],p[1],i+1,error);
+            if (!std::isfinite(error)) fatal("Non-finite GPU verification result");
+            worst=std::max(worst,error);
+        }
+    }
+    if (worst > (app.fp64 ? 1e-9 : 5e-3)) fatal("GPU sums do not match CPU reference");
+    std::printf("GPU verification passed (%s)\n",app.fp64 ? "fp64" : "fp32");
+}
 
 static void savePNG(const char* path = nullptr) {
-    std::vector<uint8_t> px(size_t(app.W) * app.H * 4), rgb(size_t(app.W) * app.H * 3);
-    glReadPixels(0, 0, app.W, app.H, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
-    for (int y = 0; y < app.H; y++)
-        for (int x = 0; x < app.W; x++)
-            for (int k = 0; k < 3; k++)
-                rgb[(size_t(app.H - 1 - y) * app.W + x) * 3 + k] = px[(size_t(y) * app.W + x) * 4 + k];
+    auto rgb = renderer.pixels();
     SYSTEMTIME t;
     GetLocalTime(&t);
     char name[128];
     std::snprintf(name, sizeof name, "poincare_%04d%02d%02d_%02d%02d%02d.png", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
-    if (path) std::snprintf(name, sizeof name, "%s", path);
-    if (writePNG(name, app.W, app.H, rgb))
-        std::printf("saved %s (%dx%d, %d/%d terms)\n", name, app.W, app.H, app.done, app.count);
+    const char* output = path ? path : name;
+    if (!writePNG(output, app.W, app.H, rgb)) fatal("Could not write PNG snapshot");
+    std::printf("saved %s (%dx%d, %d/%d terms)\n", output, app.W, app.H, app.done, app.count);
+}
+
+static ViewConstants viewConstants(int start, int end) {
+    return {UINT(start), UINT(end), UINT(app.W), UINT(app.H), app.cx, app.cy, app.scale(),
+            UINT(app.mode), UINT(app.func), app.dens};
 }
 
 static void frame() {
     if (app.done < app.count) {
-        GLuint prog = app.fp64 ? app.progD : app.progF;
-        glUseProgram(prog);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, app.fp64 ? app.matD : app.matF);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, app.acc);
-        glUniform1i(glGetUniformLocation(prog, "uW"), app.W);
-        glUniform1i(glGetUniformLocation(prog, "uH"), app.H);
-        glUniform2d(glGetUniformLocation(prog, "uCenter"), app.cx, app.cy);
-        glUniform1d(glGetUniformLocation(prog, "uScale"), app.scale());
-        GLint locS = glGetUniformLocation(prog, "uStart"), locE = glGetUniformLocation(prog, "uEnd");
         auto t0 = Clock::now();
-        // Keep each dispatch short (Windows resets the GPU if one runs > ~2 s)
-        // and the whole frame under ~30 ms so the window stays responsive.
         while (app.done < app.count && msSince(t0) < 30.0) {
-            int end = std::min(app.count, app.done + app.chunk);
-            glUniform1i(locS, app.done);
-            glUniform1i(locE, end);
+            int end = int(std::min<int64_t>(app.count, int64_t(app.done) + app.chunk));
             auto td = Clock::now();
-            glDispatchCompute((app.W + 15) / 16, (app.H + 15) / 16, 1);
-            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-            glFinish();
+            renderer.compute(viewConstants(app.done, end), app.fp64);
             double dt = msSince(td);
             app.done = end;
             if (dt < 4.0) app.chunk = std::min(app.chunk * 2, 1 << 16);
@@ -536,30 +315,20 @@ static void frame() {
         }
         if (app.done >= app.count) {
             app.renderMs = msSince(app.startT);
-            std::printf("render complete: %d terms, %dx%d, %s, %.0f ms\n", app.count, app.W, app.H, app.fp64 ? "fp64" : "fp32", app.renderMs);
+            std::printf("render complete: %d terms, %dx%d, %s, %.0f ms\n", app.count, app.W, app.H,
+                        app.fp64 ? "fp64" : "fp32", app.renderMs);
         }
     }
-    glViewport(0, 0, app.W, app.H);
-    glUseProgram(app.progDisp);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, app.acc);
-    glUniform1i(glGetUniformLocation(app.progDisp, "uW"), app.W);
-    glUniform1i(glGetUniformLocation(app.progDisp, "uH"), app.H);
-    glUniform1i(glGetUniformLocation(app.progDisp, "uMode"), app.mode);
-    glUniform1i(glGetUniformLocation(app.progDisp, "uFunc"), app.func);
-    glUniform1f(glGetUniformLocation(app.progDisp, "uDens"), app.dens);
-    glBindVertexArray(app.vao);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    renderer.draw(viewConstants(0, app.done));
     if (app.saveRequested) { savePNG(); app.saveRequested = false; }
     if (!snapshotPath.empty() && app.done >= app.count) {
+        if (verifyGPU) verifyGpuValues();
         invarianceCheck();
         savePNG(snapshotPath.c_str());
         PostQuitMessage(0);
         snapshotPath.clear();
     }
-    // No vsync while summing (don't wait 16 ms between compute batches); vsync once idle.
-    int want = app.done < app.count ? 0 : 1;
-    if (swapInterval && want != currentInterval) { swapInterval(want); currentInterval = want; }
-    SwapBuffers(app.hdc);
+    renderer.present(app.done >= app.count);
     updateTitle();
 }
 
@@ -578,7 +347,7 @@ static void zoomAt(int x, int y, double k) {
 static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_SIZE:
-        if (app.acc) resize(LOWORD(lp), HIWORD(lp));
+        if (renderer.ready()) resize(LOWORD(lp), HIWORD(lp));
         return 0;
     case WM_LBUTTONDOWN:
         app.dragging = true;
@@ -631,11 +400,68 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 int main(int argc, char** argv) {
     SetProcessDPIAware();
     std::setvbuf(stdout, nullptr, _IONBF, 0);
-    for (int i = 1; i + 1 < argc; i++) {
-        if (std::string(argv[i]) == "--snapshot") snapshotPath = argv[i + 1];
-        if (std::string(argv[i]) == "--terms") app.N = std::strtoull(argv[i + 1], nullptr, 10);
+    auto readNumber = [](const char* text, double& value) {
+        char* end = nullptr;
+        errno = 0;
+        value = std::strtod(text, &end);
+        return end != text && *end == '\0' && errno != ERANGE && std::isfinite(value);
+    };
+    bool help = false;
+    for (int i = 1; i < argc; i++) {
+        const std::string option = argv[i];
+        if (option == "--help" || option == "-h") {
+            help = true;
+        } else if (option == "--fp64") {
+            app.fp64 = true;
+        } else if (option == "--verify-gpu") {
+            verifyGPU = true;
+        } else if (option == "--center") {
+            if (i + 2 >= argc || !readNumber(argv[i + 1], app.cx) || !readNumber(argv[i + 2], app.cy)) {
+                std::fprintf(stderr, "--center requires two finite numbers: <real> <imag>\n");
+                return 1;
+            }
+            i += 2;
+        } else if (option == "--span") {
+            if (i + 1 >= argc || !readNumber(argv[i + 1], app.span) || app.span <= 0) {
+                std::fprintf(stderr, "--span requires a finite number greater than zero\n");
+                return 1;
+            }
+            ++i;
+        } else if (option == "--snapshot") {
+            if (i + 1 >= argc || argv[i + 1][0] == '\0' || std::string(argv[i + 1]).rfind("--", 0) == 0) {
+                std::fprintf(stderr, "--snapshot requires a file path\n");
+                return 1;
+            }
+            snapshotPath = argv[++i];
+        } else if (option == "--terms") {
+            char* end = nullptr;
+            errno = 0;
+            const char* text = i + 1 < argc ? argv[i + 1] : "";
+            const auto count = std::strtoull(text, &end, 10);
+            if (*text < '0' || *text > '9' || *end != '\0' || errno == ERANGE ||
+                count == 0 || count > (std::numeric_limits<int>::max)()) {
+                std::fprintf(stderr, "--terms requires a positive integer no greater than INT_MAX\n");
+                return 1;
+            }
+            app.N = static_cast<size_t>(count);
+            ++i;
+        } else {
+            std::fprintf(stderr, "Unknown option: %s (use --help)\n", option.c_str());
+            return 1;
+        }
     }
-    if (argc > 1 && std::string(argv[argc - 1]) == "--fp64") app.fp64 = true;
+    if (help) {
+        std::printf(
+            "Usage: poincare.exe [options]\n"
+            "  --center <real> <imag>  Plot center (default: 0 -0.35)\n"
+            "  --span <value>          Shorter-side extent in complex units (default: 5)\n"
+            "  --terms <count>         Number of group elements (default: 131072)\n"
+            "  --fp64                  Use double-precision summation\n"
+            "  --snapshot <file.png>   Render, save, and exit\n"
+            "  --verify-gpu            Check GPU sums against CPU when saving a snapshot\n"
+            "  --help, -h              Show this help\n");
+        return 0;
+    }
     std::printf(
         "Poincaré series  f(z) = P_{-1,-3}(z) / P_{0,-4}(z),  G = <g1, g2>\n"
         "  drag: pan   wheel: zoom   +/-: elements x2 / /2   D: fp32/fp64   M: plot style\n"
@@ -653,43 +479,10 @@ int main(int argc, char** argv) {
     AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
     app.hwnd = CreateWindowW(wc.lpszClassName, L"Poincaré series", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                              r.right - r.left, r.bottom - r.top, nullptr, nullptr, hi, nullptr);
-    app.hdc = GetDC(app.hwnd);
-
-    PIXELFORMATDESCRIPTOR pfd = {sizeof pfd, 1, PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER, PFD_TYPE_RGBA, 32};
-    pfd.cDepthBits = 0;
-    SetPixelFormat(app.hdc, ChoosePixelFormat(app.hdc, &pfd), &pfd);
-    HGLRC legacy = wglCreateContext(app.hdc);
-    wglMakeCurrent(app.hdc, legacy);
-    auto createCtx = (PFN_wglCreateContextAttribsARB)wglGetProcAddress("wglCreateContextAttribsARB");
-    if (!createCtx) fatal("wglCreateContextAttribsARB not available");
-    const int attribs[] = {WGL_CONTEXT_MAJOR_VERSION_ARB, 4, WGL_CONTEXT_MINOR_VERSION_ARB, 3,
-                           WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB, 0};
-    HGLRC ctx = createCtx(app.hdc, nullptr, attribs);
-    if (!ctx) fatal("could not create an OpenGL 4.3 core context");
-    wglMakeCurrent(app.hdc, ctx);
-    wglDeleteContext(legacy);
-    loadGL();
-    swapInterval = (PFN_wglSwapIntervalEXT)wglGetProcAddress("wglSwapIntervalEXT");
-
-    app.gpu = (const char*)glGetString(GL_RENDERER);
-    std::printf("OpenGL %s\nGPU    %s\n", (const char*)glGetString(GL_VERSION), app.gpu.c_str());
-    if (app.gpu.find("NVIDIA") == std::string::npos && app.gpu.find("Quadro") == std::string::npos)
-        std::printf("WARNING: not running on the NVIDIA GPU. Set this exe to 'High performance' in\n"
-                    "         Windows Settings > System > Display > Graphics.\n");
-    std::printf("\n");
-
-    std::string csF = std::string("#version 430\n#define REAL float\n#define VEC2 vec2\n#define VEC4 vec4\n") + COMPUTE_SRC;
-    std::string csD = std::string("#version 430\n#define FP64\n#define REAL double\n#define VEC2 dvec2\n#define VEC4 dvec4\n") + COMPUTE_SRC;
-    app.progF = link({compile(GL_COMPUTE_SHADER, csF)});
-    app.progD = link({compile(GL_COMPUTE_SHADER, csD)});
-    app.progDisp = link({compile(GL_VERTEX_SHADER, VERT_SRC), compile(GL_FRAGMENT_SHADER, FRAG_SRC)});
-    glGenVertexArrays(1, &app.vao);
-    glGenBuffers(1, &app.matF);
-    glGenBuffers(1, &app.matD);
-    glGenBuffers(1, &app.acc);
-
     RECT cr;
     GetClientRect(app.hwnd, &cr);
+    app.gpu = renderer.initialize(app.hwnd, cr.right, cr.bottom);
+    std::printf("DirectX 12\nGPU    %s\n\n", app.gpu.c_str());
     resize(cr.right, cr.bottom);
     buildGroup();
     ShowWindow(app.hwnd, SW_SHOW);
@@ -701,6 +494,7 @@ int main(int argc, char** argv) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        if (IsIconic(app.hwnd)) { WaitMessage(); continue; }
         frame();
     }
 }

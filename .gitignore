@@ -4,3 +4,5 @@
 *.pdb
 *.ilk
 *.idb
+*.lib
+*.exp
