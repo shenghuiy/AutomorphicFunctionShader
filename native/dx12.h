@@ -21,7 +21,8 @@ struct ViewConstants {
     double cx, cy, scale;
     UINT mode, function;
     float density;
-    UINT padding[3] = {};
+    UINT group;  // 0 = Kleinian <g1, g2>, 1 = icosahedral rotations
+    UINT padding[2] = {};
 };
 static_assert(sizeof(ViewConstants) == 64, "Must match the HLSL constant buffer");
 
