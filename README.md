@@ -20,7 +20,7 @@ icosahedron acting on the Riemann sphere:
 
 The group is finite, so the sum is exact. The default view is `|Re z|, |Im z| < 2.5`.
 Choose **Icosahedral** in the browser's Group menu, or run the separate native program
-`native\dx12\icosahedral\icosahedral.exe`.
+`native\build\icosahedral.exe`.
 Its Function choices are `F`, the single term `h`, and Klein's invariant `J`.
 
 The icosahedral plot can also be shown on the Riemann sphere. Choose
@@ -45,11 +45,12 @@ There are two programs, one per group:
 
 | Program | Group | Default center |
 |---|---|---|
-| `native\dx12\poincare\poincare.exe` | Kleinian ⟨g₁, g₂⟩, truncated Poincaré series | `0 -0.35` |
-| `native\dx12\icosahedral\icosahedral.exe` | 60 icosahedral rotations, exact sum | `0 0` |
+| `native\build\poincare.exe` | Kleinian ⟨g₁, g₂⟩, truncated Poincaré series | `0 -0.35` |
+| `native\build\icosahedral.exe` | 60 icosahedral rotations, exact sum | `0 0` |
 
 Run `native\dx12\build.bat` to build both, or `native\dx12\build.bat poincare` /
-`native\dx12\build.bat icosahedral` to build one.
+`native\dx12\build.bat icosahedral` to build one. All build outputs (`.exe`, `.lib`,
+`.exp`, `.obj`) go to `native\build\`.
 Group elements are enumerated on the CPU; HLSL compute shaders sum the series per pixel.
 DirectX 12 handles GPU buffers, domain coloring, and presentation. Both summation modes
 accumulate into a double-precision buffer.
@@ -60,10 +61,10 @@ for example `native\dx12\build.bat poincare poincare-dx12.exe`.
 Optionally set the initial view from the command line:
 
 ```powershell
-.\native\dx12\poincare\poincare.exe --center 0 -0.35 --span 5
-.\native\dx12\poincare\poincare.exe --center 0.2 -0.6 --span 1.5 --terms 20000 --fp64 --snapshot zoom.png
-.\native\dx12\icosahedral\icosahedral.exe --snapshot icosahedral.png
-.\native\dx12\icosahedral\icosahedral.exe --sphere --center 1.5 0.8 --snapshot sphere.png
+.\native\build\poincare.exe --center 0 -0.35 --span 5
+.\native\build\poincare.exe --center 0.2 -0.6 --span 1.5 --terms 20000 --fp64 --snapshot zoom.png
+.\native\build\icosahedral.exe --snapshot icosahedral.png
+.\native\build\icosahedral.exe --sphere --center 1.5 0.8 --snapshot sphere.png
 ```
 
 `--center <real> <imag>` sets the complex center.
@@ -88,9 +89,9 @@ Controls (both programs):
 To validate GPU sums against the CPU evaluator at three sample pixels:
 
 ```powershell
-.\native\dx12\poincare\poincare.exe --terms 20000 --verify-gpu --snapshot check.png
-.\native\dx12\poincare\poincare.exe --terms 1024 --fp64 --verify-gpu --snapshot check-fp64.png
-.\native\dx12\icosahedral\icosahedral.exe --fp64 --verify-gpu --snapshot check-icosahedral.png
+.\native\build\poincare.exe --terms 20000 --verify-gpu --snapshot check.png
+.\native\build\poincare.exe --terms 1024 --fp64 --verify-gpu --snapshot check-fp64.png
+.\native\build\icosahedral.exe --fp64 --verify-gpu --snapshot check-icosahedral.png
 ```
 
 ## Browser renderer

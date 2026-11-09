@@ -6,3 +6,6 @@
 *.idb
 *.lib
 *.exp
+
+# Native build folder
+native/build/
