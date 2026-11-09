@@ -3,7 +3,7 @@
 This note explains the second picture the renderers can draw: an automorphic
 function for the rotation group of the icosahedron. Switch to it with the
 **Group** menu in `index.html`, or run the native program
-`native\dx12\icosahedral\icosahedral.exe`. It also places that example in the wider theory of
+`native\build\icosahedral.exe`. It also places that example in the wider theory of
 Coxeter groups, triangle groups and automorphic functions on Riemann surfaces.
 The formulas match `group`, `F`, `h` and `kleinJ` in `icosahedral.js` (browser)
 and in the `icosahedral` namespace of `native/dx12/icosahedral/icosahedral.h` (native renderer).
