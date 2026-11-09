@@ -8,4 +8,4 @@
 *.exp
 
 # Native build folder
-native/dx12/build/
+native/build/
