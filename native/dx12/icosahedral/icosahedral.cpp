@@ -79,6 +79,7 @@ int main(int argc, char** argv) {
         0,  // finite group: always all 60 elements
         ICOSAHEDRAL_HLSL,
         build, reference, value, invariance,
+        true,  // G acts on the whole sphere: offer the Riemann sphere view
     };
     return runApp(group, argc, argv);
 }
