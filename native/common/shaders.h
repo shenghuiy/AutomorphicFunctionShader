@@ -23,7 +23,47 @@ cbuffer View : register(b0) {
     double uScale;
     uint uMode, uFunc;
     float uDens;
+    uint uSphere;
+    double uRadius;
+    double2 uRot[5];  // 3x3 rotation, column-major: images of the view x, y, z axes
 };
+
+// Complex coordinate of pixel p (top-left origin); App::toZ in app.h mirrors it.
+// Plane view: z = centre + offset * scale.
+// Sphere view: orthographic view of a sphere of radius uRadius pixels, turned by uRot, and
+//   z = (X + iY) / (1 + Z), stereographic projection from the south pole, so
+//   0 is the north pole and infinity the south pole. Seen from outside, this
+//   map preserves orientation, so the sphere and the plane are not mirrored.
+//   Returns false off the sphere. `front` is the view-space depth (1 at the
+//   centre of the disc, 0 at the rim) and `cover` the antialiased disc coverage.
+//   Computed in double, like the plane view, so --fp64 keeps its accuracy.
+//   The double arithmetic uses no double literals: on at least one NVIDIA
+//   driver, immediates such as 2.0L or 228.0L read as zero in some
+//   instructions. Working in pixel units, every constant comes from the cbuffer.
+bool pixelZ(uint2 p, out double2 z, out float front, out float cover) {
+    // Pixel offsets are exact in float at supported window sizes.
+    float2 offset = float2((float)p.x+0.5-0.5*uW, 0.5*uH-0.5-(float)p.y);
+    front = 1.0; cover = 1.0;
+    if (uSphere == 0) { z = uCenter + (double2)offset*uScale; return true; }
+    double2 o = (double2)offset;
+    double R2 = uRadius*uRadius, o2 = o.x*o.x + o.y*o.y;
+    float r = sqrt((float)o2);
+    cover = saturate((float)uRadius - r + 0.5);
+    if (o2 >= R2) { z = (double2)0; front = 0.0; return false; }
+    // Depth S = sqrt(R^2 - |o|^2). Shader model 5 has no double sqrt:
+    // refine the float estimate with two Newton steps, S = (S^2 + D) / 2S.
+    double D = R2 - o2, S = (double)sqrt((float)D);
+    S = (S*S + D) / (S + S);
+    S = (S*S + D) / (S + S);
+    front = (float)(S / uRadius);
+    double3 X = double3(uRot[0].xy, uRot[1].x), Y = double3(uRot[1].y, uRot[2].xy), Z = double3(uRot[3].xy, uRot[4].x);
+    double3 V = o.x*X + o.y*Y + S*Z;  // sphere point times the radius
+    // z = (X + iY) / (1 + Z) = V.xy / (R + V.z). Near the south pole R + V.z
+    // cancels, so use the equal form V.xy (R - V.z) / (V.x^2 + V.y^2) there.
+    if (V.z >= 0) z = V.xy / (uRadius + V.z);
+    else z = V.xy * ((uRadius - V.z) / (V.x*V.x + V.y*V.y));
+    return true;
+}
 
 #ifdef COMPUTE
 StructuredBuffer<VEC4> mats : register(t0);
@@ -60,10 +100,10 @@ static const char* SHADER_TAIL = R"HLSL(
 [numthreads(16,16,1)]
 void compute(uint3 p : SV_DispatchThreadID, uint lid : SV_GroupIndex) {
     bool inside = p.x < uW && p.y < uH;
-    // Pixel offsets are exact in float at supported window sizes; transform
-    // to the complex plane in double precision to retain deep zoom accuracy.
-    float2 offset = float2((float)p.x+0.5-0.5*uW, 0.5*uH-0.5-(float)p.y);
-    VEC2 z = (VEC2)(uCenter + (double2)offset*uScale);
+    // pixelZ works in double precision to retain deep zoom accuracy.
+    double2 zd; float front, cover;
+    inside = inside && pixelZ(p.xy, zd, front, cover);
+    VEC2 z = (VEC2)zd;
     VEC4 sum = (VEC4)0;
     for (uint base = uStart; base < uEnd; base += 256) {
         uint n = min(256u, uEnd-base);
@@ -104,8 +144,11 @@ float4 pixel(float4 position : SV_Position) : SV_Target {
     // Clamp: quads on the bottom/right edge run helper lanes (needed for
     // fwidth) one pixel outside the target, which would read past acc.
     uint2 p=min((uint2)position.xy,uint2(uW-1,uH-1));
-    float2 offset=float2((float)p.x+0.5-0.5*uW,0.5*uH-0.5-(float)p.y);
-    double2 fd=plotValue(acc[p.y*uW+p.x],uCenter+(double2)offset*uScale);
+    double2 z; float front, cover;
+    // Off the sphere acc is not written; colour a constant instead (no early
+    // return, so neighbouring on-sphere lanes keep valid derivatives).
+    bool on=pixelZ(p,z,front,cover);
+    double2 fd=on ? plotValue(acc[p.y*uW+p.x],z) : double2(1,0);
     double s=max(abs(fd.x),abs(fd.y));
     if (!(s>0.0L)) return float4(0,0,0,1);
     float2 dir=(float2)(fd/s);
@@ -124,6 +167,7 @@ float4 pixel(float4 position : SV_Position) : SV_Target {
 #if FADE_POLES
     col*=1.0-smoothstep(14.0,24.0,abs(lm));
 #endif
+    if (uSphere!=0) col=lerp(float3(0.045,0.05,0.065),col*(0.55+0.45*front),cover);
     return float4(pow(abs(col),1.0/1.1),1);
 }
 #endif

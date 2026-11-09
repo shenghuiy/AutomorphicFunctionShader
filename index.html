@@ -39,6 +39,12 @@
       <option value="1">Icosahedral (60 rotations)</option>
     </select>
   </label>
+  <label title="Icosahedral group only. On the sphere, drag rotates and scrolling zooms. Shortcut: S">View
+    <select id="view">
+      <option value="0">Complex plane</option>
+      <option value="1">Riemann sphere</option>
+    </select>
+  </label>
   <label>Group elements <span><input id="nTerms" type="range" min="3" max="5.3" step="0.05" value="4.3"> <span id="nTermsVal"></span></span></label>
   <label>Plot
     <select id="mode">
@@ -148,6 +154,30 @@ const GPU_NAME = (() => {
   return (m ? m[1] : r).trim();
 })();
 const CHUNK = 256;
+// Complex coordinate of a fragment, shared by both passes (mirrors pixelZ in native/common/shaders.h).
+// Plane view: z = centre + offset * scale.
+// Riemann sphere view (icosahedral group): orthographic view of a sphere of radius uRadius pixels,
+// turned by uRot (columns: images of the view x, y, z axes), and z = (X + iY) / (1 + Z), the
+// stereographic projection from the south pole: 0 is the north pole, ∞ the south pole, and seen
+// from outside the map preserves orientation. Returns false off the sphere; front = depth toward
+// the viewer (1 at the centre, 0 at the rim), cover = antialiased disc coverage.
+const PIXEL_Z = `
+uniform int uSphere;
+uniform float uRadius;
+uniform mat3 uRot;
+bool pixelZ(vec2 frag, out vec2 z, out float front, out float cover){
+  vec2 o = frag - 0.5 * uRes;
+  front = 1.0; cover = 1.0;
+  if (uSphere == 0) { z = uCenter + o * uScale; return true; }
+  float r = length(o);
+  cover = clamp(uRadius - r + 0.5, 0.0, 1.0);
+  if (r >= uRadius) { z = vec2(0.0); front = 0.0; return false; }
+  vec3 V = uRot * vec3(o, sqrt(uRadius * uRadius - r * r)); // sphere point times the radius
+  front = sqrt(1.0 - (r / uRadius) * (r / uRadius));
+  // near the south pole R + V.z cancels: use the equal form V.xy (R − V.z) / |V.xy|²
+  z = V.z >= 0.0 ? V.xy / (uRadius + V.z) : V.xy * ((uRadius - V.z) / max(dot(V.xy, V.xy), 1e-30));
+  return true;
+}`;
 const VS = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
 
@@ -170,10 +200,12 @@ vec2 cinv(vec2 a){
   return vec2(t.x, -t.y) / (dot(t, t) * s);
 }
 ${Icosahedral.GLSL_ACC}
+${PIXEL_Z}
 void main(){
   ivec2 px = ivec2(gl_FragCoord.xy);
   vec4 acc = texelFetch(uPrev, px, 0);
-  vec2 z = uCenter + (gl_FragCoord.xy - 0.5 * uRes) * uScale;
+  vec2 z; float front, cover;
+  if (!pixelZ(gl_FragCoord.xy, z, front, cover)) { o = acc; return; }
   for (int i = 0; i < ${CHUNK}; i++) {
     int idx = uStart + i;
     if (idx >= uCount) break;
@@ -220,11 +252,17 @@ vec3 hsv(float h, float s, float v){
 // smooth sawtooth with screen-space anti-aliasing
 float saw(float x){ float f = fract(x); float w = fwidth(x); return mix(f, 0.5, smoothstep(0.3, 0.8, w)); }
 float gridline(float x){ float w = max(fwidth(x), 1e-6); float d = abs(fract(x - 0.5) - 0.5) / w; return 1.0 - smoothstep(0.0, 1.2, d); }
+${PIXEL_Z}
 void main(){
   vec4 a = texelFetch(uAcc, ivec2(gl_FragCoord.xy), 0);
+  vec2 z; float front, cover;
+  // off the sphere the accumulator is empty: colour a constant (no early return, so
+  // neighbouring on-sphere fragments keep valid derivatives) and paint the background below
+  bool on = pixelZ(gl_FragCoord.xy, z, front, cover);
   vec2 f;
-  if (uGroup == 1) {
-    vec2 z = uCenter + (gl_FragCoord.xy - 0.5 * uRes) * uScale;
+  if (!on) {
+    f = vec2(1.0, 0.0);
+  } else if (uGroup == 1) {
     f = uFunc == 0 ? a.xy : (uFunc == 1 ? a.zw : kleinJ(z));
   } else {
     f = uFunc == 0 ? cdiv(a.xy, a.zw) : (uFunc == 1 ? a.zw : a.xy);
@@ -251,6 +289,7 @@ void main(){
   // fade where the value blows up (poles) / vanishes (zeros). Skipped for the icosahedral
   // sum: F is typically around 2^13 there, and its poles read clearly without the fade.
   if (uGroup == 0) col *= mix(1.0, 0.0, smoothstep(14.0, 24.0, abs(lm)) );
+  if (uSphere != 0) col = mix(vec3(0.043, 0.047, 0.063), col * (0.55 + 0.45 * front), cover);
   o = vec4(pow(col, vec3(1.0/1.1)), 1.0);
 }`;
 
@@ -296,6 +335,42 @@ const DEFAULT_VIEWS = [{ cx: 0, cy: -0.35, scale: 0 }, { cx: 0, cy: 0, scale: 0 
 let view = { ...DEFAULT_VIEWS[0] };
 const ui = id => document.getElementById(id);
 const isIcosa = () => +ui('group').value === 1;
+const isSphere = () => isIcosa() && +ui('view').value === 1;
+
+// Riemann sphere view: rot holds, column-major, the world images of the view x, y, z axes
+// (x right, y up, z toward the viewer); zoom 1 fits the sphere in the canvas.
+const sphere = { rot: [1, 0, 0, 0, 1, 0, 0, 0, 1], zoom: 1 };
+const sphereRadius = () => 0.45 * Math.min(W, H) * sphere.zoom;
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit3 = a => { const n = Math.hypot(...a); return a.map(v => v / n); };
+// stereographic projection from the south pole of V on the sphere of radius R
+const sphereToZ = (V, R = 1) => V[2] >= 0 ? [V[0] / (R + V[2]), V[1] / (R + V[2])]
+  : (s => [V[0] * s, V[1] * s])((R - V[2]) / Math.max(V[0] * V[0] + V[1] * V[1], 1e-300));
+// rebuild the rotation from its x and z columns (Gram–Schmidt), so drags do not drift
+function setRotation(x, z) {
+  z = unit3(z);
+  const d = dot3(x, z);
+  x = unit3(x.map((v, i) => v - d * z[i]));
+  sphere.rot = [...x, ...cross3(z, x), ...z];
+}
+// turn the sphere so z faces the viewer with Re z to the right and Im z up
+function faceSphereToward([x, y]) {
+  const r2 = x * x + y * y, s = Math.max(1, r2);
+  if (!isFinite(r2)) return;
+  setRotation([(1 - x * x + y * y) / s, -2 * x * y / s, -2 * x / s],  // ∂/∂x of the inverse projection
+              [2 * x / (1 + r2), 2 * y / (1 + r2), (1 - r2) / (1 + r2)]);
+}
+// rotate so the surface follows a drag of (dx, dy) canvas pixels (y up)
+function dragSphere(dx, dy) {
+  const len = Math.hypot(dx, dy);
+  if (!len) return;
+  // a view-space rotation A about (−dy, dx, 0) by len/R; world points stay put, so rot ← rot·A⁻¹
+  const a = [-dy / len, dx / len, 0], t = -len / sphereRadius(), c = Math.cos(t), sn = Math.sin(t);
+  const A = e => { const ax = cross3(a, e), ad = dot3(a, e); return e.map((v, i) => v * c + ax[i] * sn + a[i] * ad * (1 - c)); };
+  const R = v => [0, 1, 2].map(i => sphere.rot[i] * v[0] + sphere.rot[3 + i] * v[1] + sphere.rot[6 + i] * v[2]);
+  setRotation(R(A([1, 0, 0])), R(A([0, 0, 1])));
+}
 let icoMats = []; // the 60 rotations themselves (mats holds them pre-shifted by −0.05)
 
 const GROUP_TEXT = [
@@ -370,6 +445,7 @@ function frame(t) {
     gl.uniform1i(accProg.u.uGroup, +isIcosa());
     gl.uniform2f(accProg.u.uCenter, view.cx, view.cy); gl.uniform2f(accProg.u.uRes, W, H);
     gl.uniform1f(accProg.u.uScale, view.scale);
+    setSphereUniforms(accProg);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, matTex);
     for (let k = 0; k < passesPerFrame && done < count; k++) {
       gl.uniform1i(accProg.u.uStart, done);
@@ -393,21 +469,36 @@ function frame(t) {
   gl.uniform1f(dispProg.u.uDens, +ui('dens').value);
   gl.uniform2f(dispProg.u.uCenter, view.cx, view.cy); gl.uniform2f(dispProg.u.uRes, W, H);
   gl.uniform1f(dispProg.u.uScale, view.scale);
+  setSphereUniforms(dispProg);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   ui('bar').firstElementChild.style.width = (100 * done / count).toFixed(1) + '%';
+  const facing = sphereToZ(sphere.rot.slice(6));
   ui('stat').textContent =
     `terms summed  ${done.toLocaleString()} / ${count.toLocaleString()}  (${ui('stat').dataset.norm})\n` +
     `gpu           ${GPU_NAME}\n` +
-    `view          ${view.cx.toFixed(4)} ${view.cy >= 0 ? '+' : '−'} ${Math.abs(view.cy).toFixed(4)}i, width ${(view.scale * W).toPrecision(3)}`;
+    (isSphere()
+      ? `view          sphere facing ${fmt(facing)}, zoom ${sphere.zoom.toPrecision(3)}`
+      : `view          ${view.cx.toFixed(4)} ${view.cy >= 0 ? '+' : '−'} ${Math.abs(view.cy).toFixed(4)}i, width ${(view.scale * W).toPrecision(3)}`);
   requestAnimationFrame(frame);
+}
+function setSphereUniforms(prog) {
+  gl.uniform1i(prog.u.uSphere, +isSphere());
+  gl.uniform1f(prog.u.uRadius, sphereRadius());
+  gl.uniformMatrix3fv(prog.u.uRot, false, new Float32Array(sphere.rot));
 }
 
 // ---------------------------------------------------------------------------
 // Interaction
 // ---------------------------------------------------------------------------
+// client coordinates -> z, as pixelZ in the shaders; null off the sphere
 const toZ = (x, y) => { const s = W / canvas.clientWidth;
-  return [view.cx + (x * s - 0.5 * W) * view.scale, view.cy + ((canvas.clientHeight - y) * s - 0.5 * H) * view.scale]; };
+  const ox = x * s - 0.5 * W, oy = (canvas.clientHeight - y) * s - 0.5 * H;
+  if (!isSphere()) return [view.cx + ox * view.scale, view.cy + oy * view.scale];
+  const R = sphereRadius(), d = R * R - ox * ox - oy * oy;
+  if (d <= 0) return null;
+  const S = Math.sqrt(d), r = sphere.rot;
+  return sphereToZ([0, 1, 2].map(i => ox * r[i] + oy * r[3 + i] + S * r[6 + i]), R); };
 const fmt = z => `${z[0].toPrecision(5)} ${z[1] >= 0 ? '+' : '−'} ${Math.abs(z[1]).toPrecision(5)}i`;
 
 const pointers = new Map(); let pinchD = 0;
@@ -418,7 +509,9 @@ canvas.addEventListener('pointermove', e => {
   if (pointers.has(e.pointerId)) {
     const [px, py] = pointers.get(e.pointerId);
     const s = W / canvas.clientWidth;
-    if (pointers.size === 1) {
+    if (pointers.size === 1 && isSphere()) {
+      dragSphere((e.clientX - px) * s, (py - e.clientY) * s);
+    } else if (pointers.size === 1) {
       view.cx -= (e.clientX - px) * s * view.scale;
       view.cy += (e.clientY - py) * s * view.scale;
     }
@@ -434,6 +527,8 @@ canvas.addEventListener('pointermove', e => {
   hover(e.clientX, e.clientY);
 });
 function zoomAt(x, y, k) {
+  // the sphere stays centred in the canvas
+  if (isSphere()) { sphere.zoom = Math.min(1e4, Math.max(0.05, sphere.zoom / k)); return; }
   const z0 = toZ(x, y); view.scale *= k; const z1 = toZ(x, y);
   view.cx += z0[0] - z1[0]; view.cy += z0[1] - z1[1];
 }
@@ -444,6 +539,7 @@ function hover(x, y) {
   clearTimeout(hoverTimer);
   hoverTimer = setTimeout(() => {
     const z = toZ(x, y);
+    if (!z) { ui('cursor').textContent = 'z             off the sphere'; return; }
     if (isIcosa()) {
       const F = Icosahedral.F(icoMats, z), J = Icosahedral.kleinJ(z);
       ui('cursor').textContent = `z             ${fmt(z)}\nF(z)          ${fmt(F)}\nJ(z)          ${fmt(J)}`;
@@ -480,8 +576,33 @@ ui('check').onclick = () => {
   });
   ui('inv').textContent = lines.join('\n');
 };
-ui('reset').onclick = () => { view = { ...DEFAULT_VIEWS[+isIcosa()], scale: 5.0 / Math.min(W, H) }; restart(); };
-ui('group').onchange = () => { ui('inv').textContent = ''; ui('reset').onclick(); buildGroup(); };
+ui('reset').onclick = () => {
+  view = { ...DEFAULT_VIEWS[+isIcosa()], scale: 5.0 / Math.min(W, H) };
+  sphere.zoom = 1; faceSphereToward([view.cx, view.cy]);
+  restart();
+};
+ui('group').onchange = () => {
+  ui('view').value = '0';
+  ui('view').disabled = !isIcosa();
+  ui('inv').textContent = ''; ui('reset').onclick(); buildGroup();
+};
+// switch views, keeping the point at the centre of the canvas
+ui('view').onchange = () => {
+  if (isSphere()) {
+    faceSphereToward([view.cx, view.cy]);
+  } else {
+    const z = sphereToZ(sphere.rot.slice(6));
+    if (Math.hypot(...z) < 1e12) { view.cx = z[0]; view.cy = z[1]; }
+  }
+  restart();
+};
+addEventListener('keydown', e => {
+  if ((e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey && !e.altKey && isIcosa() && !['INPUT', 'SELECT'].includes(e.target.tagName)) {
+    ui('view').value = isSphere() ? '0' : '1';
+    ui('view').onchange();
+  }
+});
+ui('view').disabled = !isIcosa();
 ui('nTerms').oninput = () => { ui('nTermsVal').textContent = Math.round(Math.pow(10, +ui('nTerms').value)).toLocaleString(); };
 ui('nTerms').onchange = buildGroup;
 ui('res').onchange = () => { W = 0; resize(); };

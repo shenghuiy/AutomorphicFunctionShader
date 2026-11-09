@@ -23,6 +23,14 @@ Choose **Icosahedral** in the browser's Group menu, or run the separate native p
 `native\icosahedral\icosahedral.exe`.
 Its Function choices are `F`, the single term `h`, and Klein's invariant `J`.
 
+The icosahedral plot can also be shown on the Riemann sphere. Choose
+**View → Riemann sphere** in the browser, or press `S` in either the browser or
+`icosahedral.exe` (or start it with `--sphere`). The sphere uses stereographic
+projection from the south pole, `z = (X + iY)/(1 + Z)`, so 0 is the north pole and
+∞ the south pole. Seen from outside, this keeps the plane's orientation rather than
+mirroring it. Switching views keeps the point at the centre of the window. On the
+sphere, drag rotates it and the scroll wheel zooms.
+
 ![Phase portrait of the icosahedral automorphic function](docs/icosahedral.png)
 
 See [docs/coxeter.md](docs/coxeter.md) for Coxeter and triangle groups, Klein's
@@ -55,13 +63,15 @@ Optionally set the initial view from the command line:
 .\native\poincare\poincare.exe --center 0 -0.35 --span 5
 .\native\poincare\poincare.exe --center 0.2 -0.6 --span 1.5 --terms 20000 --fp64 --snapshot zoom.png
 .\native\icosahedral\icosahedral.exe --snapshot icosahedral.png
+.\native\icosahedral\icosahedral.exe --sphere --center 1.5 0.8 --snapshot sphere.png
 ```
 
 `--center <real> <imag>` sets the complex center.
 `--span <value>` sets the extent of the shorter window dimension in complex-plane
 units (default: `5`); it must be finite and positive. The other dimension follows
 the window aspect ratio. Both options are optional. `--terms` exists only for
-`poincare.exe`. Run either program with `--help` for all options.
+`poincare.exe`, and `--sphere` (start in the Riemann sphere view, with `--center`
+facing the viewer) only for `icosahedral.exe`. Run either program with `--help` for all options.
 
 Controls (both programs):
 
@@ -70,6 +80,8 @@ Controls (both programs):
 - `D`: toggle fp32 / fp64 summation.
 - `M`: cycle plot styles; `F`: cycle displayed functions.
 - `[` / `]`: adjust contour density; `R`: reset the view.
+- `S`: toggle complex plane / Riemann sphere (`icosahedral.exe` only). On the
+  sphere, drag rotates and scroll zooms.
 - `I`: print an invariance check; `P`: save a PNG.
 - `Esc`: quit.
 

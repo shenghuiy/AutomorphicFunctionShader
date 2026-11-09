@@ -21,9 +21,12 @@ struct ViewConstants {
     double cx, cy, scale;
     UINT mode, function;
     float density;
-    UINT padding[3] = {};
+    UINT sphere;          // 0: complex plane, 1: Riemann sphere
+    double radius;        // sphere radius in pixels
+    double rot[3][3];     // sphere rotation: images of the view x, y, z axes
+    double padding = 0;
 };
-static_assert(sizeof(ViewConstants) == 64, "Must match the HLSL constant buffer");
+static_assert(sizeof(ViewConstants) == 144, "Must match the HLSL constant buffer");
 
 class DxRenderer {
     ComPtr<ID3D12Device> device;

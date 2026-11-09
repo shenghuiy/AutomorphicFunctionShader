@@ -12,6 +12,8 @@
 //   D               toggle fp32 / fp64 summation
 //   M               cycle plot style    F            cycle displayed function
 //   [ / ]           contour density     R            reset view
+//   S               plane / Riemann sphere view (groups with Group::sphere);
+//                   in the sphere view, drag rotates and the wheel zooms
 //   I               invariance check (console)
 //   P               save PNG of the current window
 //   Esc             quit
@@ -71,6 +73,8 @@ struct Group {
     cd (*value)(cd sum0, cd sum1, int func, cd z);
     // Print an invariance check to the console.
     void (*invariance)();
+    // Offer the Riemann sphere view (S key, --sphere).
+    bool sphere = false;
 };
 
 using Clock = std::chrono::steady_clock;
@@ -81,6 +85,11 @@ struct App {
     HWND hwnd = nullptr;
     int W = 0, H = 0;
     double cx = 0.0, cy = 0.0, span = 5.0;  // span = width of the shorter screen side in z-units
+    // Riemann sphere view: rot[j] is the world-space image of view axis j
+    // (x right, y up, z toward the viewer); zoom 1 fits the sphere in the window.
+    bool sphere = false;
+    double rot[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    double sphereZoom = 1.0;
     size_t N = 0;
     bool fp64 = false;
     int mode = 0, func = 0;
@@ -97,9 +106,22 @@ struct App {
     bool saveRequested = false;
 
     double scale() const { return span / std::max(1, std::min(W, H)); }
-    cd toZ(int x, int y) const {  // window pixel (top-left origin) -> z
-        double s = scale();
-        return {cx + (x + 0.5 - 0.5 * W) * s, cy + ((H - 1 - y) + 0.5 - 0.5 * H) * s};
+    double radius() const { return 0.45 * std::max(1, std::min(W, H)) * sphereZoom; }
+    // Window pixel (top-left origin) -> z; matches pixelZ in shaders.h. NaN off the sphere.
+    cd toZ(int x, int y) const {
+        double ox = x + 0.5 - 0.5 * W, oy = (H - 1 - y) + 0.5 - 0.5 * H;
+        if (!sphere) return {cx + ox * scale(), cy + oy * scale()};
+        double R = radius(), R2 = R * R, o2 = ox * ox + oy * oy;
+        if (o2 >= R2) return {NAN, NAN};
+        double S = std::sqrt(R2 - o2), V[3];
+        for (int i = 0; i < 3; i++) V[i] = ox * rot[0][i] + oy * rot[1][i] + S * rot[2][i];
+        return sphereToZ(V, R);
+    }
+    // Stereographic projection from the south pole of the point V on the sphere
+    // of radius R: 0 at the north pole, infinity at the south pole.
+    static cd sphereToZ(const double V[3], double R = 1) {
+        if (V[2] >= 0) return cd(V[0], V[1]) / (R + V[2]);
+        return cd(V[0], V[1]) * ((R - V[2]) / std::max(V[0] * V[0] + V[1] * V[1], 1e-300));
     }
 };
 static App app;
@@ -112,10 +134,79 @@ static void restart() {
     app.startT = Clock::now();
 }
 
+static void normalize3(double v[3]) {
+    double n = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    for (int i = 0; i < 3; i++) v[i] /= n;
+}
+static void cross3(const double a[3], const double b[3], double out[3]) {
+    out[0] = a[1] * b[2] - a[2] * b[1];
+    out[1] = a[2] * b[0] - a[0] * b[2];
+    out[2] = a[0] * b[1] - a[1] * b[0];
+}
+// Re-orthonormalise the rotation (Gram-Schmidt) so repeated drags do not drift.
+static void orthonormalize() {
+    double *x = app.rot[0], *y = app.rot[1], *z = app.rot[2];
+    normalize3(z);
+    double d = x[0] * z[0] + x[1] * z[1] + x[2] * z[2];
+    for (int i = 0; i < 3; i++) x[i] -= d * z[i];
+    normalize3(x);
+    cross3(z, x, y);
+}
+
+// Turn the sphere so the point z faces the viewer with Re z to the right and
+// Im z up. The projection is conformal and orientation preserving, so the
+// neighbourhood of z looks like the plane view around the same centre.
+static void faceSphereToward(cd z) {
+    double x = z.real(), y = z.imag(), r2 = std::norm(z);
+    if (!std::isfinite(r2)) return;
+    double *right = app.rot[0], *front = app.rot[2];
+    front[0] = 2 * x / (1 + r2); front[1] = 2 * y / (1 + r2); front[2] = (1 - r2) / (1 + r2);
+    // d/dx of the inverse projection, times (1 + r2)^2 / 2, divided by max(1, r2) against overflow
+    double s = std::max(1.0, r2);
+    right[0] = (1 - x * x + y * y) / s; right[1] = -2 * x * y / s; right[2] = -2 * x / s;
+    orthonormalize();
+}
+
+// Rotate the sphere so the surface follows a drag of (dx, dy) pixels (y up).
+static void dragSphere(double dx, double dy) {
+    double len = std::hypot(dx, dy);
+    if (len == 0) return;
+    // In view space the drag is a rotation A about a = (-dy, dx, 0)/len by len/radius.
+    // World points stay fixed, so rot becomes rot * A^-1 = rot * A(a, -angle).
+    double angle = -len / app.radius(), c = std::cos(angle), sn = std::sin(angle);
+    double a[3] = {-dy / len, dx / len, 0};
+    double A[3][3];  // Rodrigues' formula; A[j] = image of view axis j
+    for (int j = 0; j < 3; j++) {
+        double e[3] = {0, 0, 0}, axe[3];
+        e[j] = 1;
+        cross3(a, e, axe);
+        for (int i = 0; i < 3; i++) A[j][i] = e[i] * c + axe[i] * sn + a[i] * a[j] * (1 - c);
+    }
+    double R[3][3];
+    for (int j = 0; j < 3; j++)
+        for (int i = 0; i < 3; i++) R[j][i] = app.rot[0][i] * A[j][0] + app.rot[1][i] * A[j][1] + app.rot[2][i] * A[j][2];
+    std::memcpy(app.rot, R, sizeof R);
+    orthonormalize();
+}
+
 static void resetView() {
     app.cx = app.group->cx;
     app.cy = app.group->cy;
     app.span = app.group->span;
+    app.sphereZoom = 1.0;
+    faceSphereToward(cd(app.cx, app.cy));
+}
+
+// S key: switch views, keeping the point at the centre of the window.
+static void toggleSphere() {
+    if (app.sphere) {
+        cd z = App::sphereToZ(app.rot[2]);
+        if (std::abs(z) < 1e12) { app.cx = z.real(); app.cy = z.imag(); }
+    } else {
+        faceSphereToward(cd(app.cx, app.cy));
+    }
+    app.sphere = !app.sphere;
+    std::printf("view: %s\n", app.sphere ? "Riemann sphere (drag rotates, wheel zooms)" : "complex plane");
 }
 
 static void buildGroup() {
@@ -148,13 +239,21 @@ static void updateTitle() {
     int px = std::clamp(app.mx, 0, app.W - 1), py = std::clamp(app.my, 0, app.H - 1);
     renderer.readPixel(px, py, a);
     cd z = app.toZ(app.mx, app.my);
-    cd val = app.group->value(cd(a[0], a[1]), cd(a[2], a[3]), app.func, z);
+    char where[160], extent[64];
+    if (std::isnan(z.real())) {
+        std::snprintf(where, sizeof where, "off the sphere");
+    } else {
+        cd val = app.group->value(cd(a[0], a[1]), cd(a[2], a[3]), app.func, z);
+        std::snprintf(where, sizeof where, "z = %.6f%+.6fi   %s(z) = %.6g%+.6gi", z.real(), z.imag(),
+                      app.group->funcNames[app.func], val.real(), val.imag());
+    }
+    if (app.sphere) std::snprintf(extent, sizeof extent, "sphere zoom %.3g", app.sphereZoom);
+    else std::snprintf(extent, sizeof extent, "width %.3g", app.scale() * app.W);
     char buf[512];
-    std::snprintf(buf, sizeof buf,
-                  "%s  |  %s  |  %s  |  terms %d/%d %s |  z = %.6f%+.6fi   %s(z) = %.6g%+.6gi  |  width %.3g",
+    std::snprintf(buf, sizeof buf, "%s  |  %s  |  %s  |  terms %d/%d %s |  %s  |  %s",
                   app.group->title, app.gpu.c_str(), app.fp64 ? "fp64" : "fp32", app.done, app.count,
                   app.done < app.count ? "" : (std::string("(") + std::to_string(int(app.renderMs)) + " ms) ").c_str(),
-                  z.real(), z.imag(), app.group->funcNames[app.func], val.real(), val.imag(), app.scale() * app.W);
+                  where, extent);
     wchar_t wbuf[512];
     MultiByteToWideChar(CP_UTF8, 0, buf, -1, wbuf, 512);
     SetWindowTextW(app.hwnd, wbuf);
@@ -167,8 +266,9 @@ static void verifyGpuValues() {
         double sums[4];
         renderer.readPixel(p[0],p[1],sums);
         cd actual[] = {{sums[0],sums[1]},{sums[2],sums[3]}};
-        cd reference[2];
-        app.group->reference(app.toZ(p[0],p[1]), reference);
+        cd z = app.toZ(p[0],p[1]), reference[2];
+        if (std::isnan(z.real())) { std::printf("GPU check (%d,%d): off the sphere, skipped\n",p[0],p[1]); continue; }
+        app.group->reference(z, reference);
         for (int i=0;i<2;++i) {
             double error=std::abs(actual[i]-reference[i])/std::max(1e-30,std::abs(reference[i]));
             std::printf("GPU check (%d,%d) %s: relative error %.3e\n",p[0],p[1],app.group->sumNames[i],error);            if (!std::isfinite(error)) fatal("Non-finite GPU verification result");
@@ -192,8 +292,10 @@ static void savePNG(const char* path = nullptr) {
 }
 
 static ViewConstants viewConstants(int start, int end) {
-    return {UINT(start), UINT(end), UINT(app.W), UINT(app.H), app.cx, app.cy, app.scale(),
-            UINT(app.mode), UINT(app.func), app.dens};
+    ViewConstants v = {UINT(start), UINT(end), UINT(app.W), UINT(app.H), app.cx, app.cy, app.scale(),
+                       UINT(app.mode), UINT(app.func), app.dens, UINT(app.sphere), app.radius()};
+    std::memcpy(v.rot, app.rot, sizeof v.rot);
+    return v;
 }
 
 static void frame() {
@@ -228,6 +330,11 @@ static void frame() {
 }
 
 static void zoomAt(int x, int y, double k) {
+    if (app.sphere) {  // the sphere stays centred in the window
+        app.sphereZoom = std::clamp(app.sphereZoom / k, 0.05, 1e4);
+        restart();
+        return;
+    }
     cd z0 = app.toZ(x, y);
     app.span *= k;
     cd z1 = app.toZ(x, y);
@@ -254,9 +361,13 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_MOUSEMOVE: {
         int x = short(LOWORD(lp)), y = short(HIWORD(lp));
         if (app.dragging) {
-            double s = app.scale();
-            app.cx -= (x - app.mx) * s;
-            app.cy += (y - app.my) * s;
+            if (app.sphere) {
+                dragSphere(x - app.mx, app.my - y);
+            } else {
+                double s = app.scale();
+                app.cx -= (x - app.mx) * s;
+                app.cy += (y - app.my) * s;
+            }
             restart();
         }
         app.mx = x, app.my = y;
@@ -278,6 +389,7 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case '[': app.dens = std::max(0.25f, app.dens / 1.25f); break;
         case ']': app.dens = std::min(8.0f, app.dens * 1.25f); break;
         case 'r': case 'R': resetView(); restart(); break;
+        case 's': case 'S': if (app.group->sphere) { toggleSphere(); restart(); } break;
         case 'i': case 'I': app.group->invariance(); break;
         case 'p': case 'P': app.saveRequested = true; break;
         case 27: PostQuitMessage(0); break;
@@ -310,6 +422,8 @@ static int runApp(const Group& group, int argc, char** argv) {
             help = true;
         } else if (option == "--fp64") {
             app.fp64 = true;
+        } else if (option == "--sphere" && group.sphere) {
+            app.sphere = true;
         } else if (option == "--verify-gpu") {
             verifyGPU = true;
         } else if (option == "--center") {
@@ -353,6 +467,8 @@ static int runApp(const Group& group, int argc, char** argv) {
         std::printf("  --span <value>          Shorter-side extent in complex units (default: %g)\n", group.span);
         if (variableTerms)
             std::printf("  --terms <count>         Number of group elements (default: %zu)\n", group.defaultTerms);
+        if (group.sphere)
+            std::printf("  --sphere                Start in the Riemann sphere view, centre facing the viewer\n");
         std::printf(
             "  --fp64                  Use double-precision summation\n"
             "  --snapshot <file.png>   Render, save, and exit\n"
@@ -363,8 +479,11 @@ static int runApp(const Group& group, int argc, char** argv) {
     std::printf("%s  %s\n", group.title, group.formula);
     std::printf("  drag: pan   wheel: zoom   %sD: fp32/fp64   M: plot style\n",
                 variableTerms ? "+/-: elements x2 / /2   " : "");
-    std::printf("  F: function (%s, %s, %s)   [ ]: contour density   R: reset   I: invariance check   P: save PNG   Esc: quit\n\n",
+    std::printf("  F: function (%s, %s, %s)   [ ]: contour density   R: reset   I: invariance check   P: save PNG   Esc: quit\n",
                 group.funcNames[0], group.funcNames[1], group.funcNames[2]);
+    if (group.sphere) std::printf("  S: plane / Riemann sphere (in the sphere view, drag rotates and the wheel zooms)\n");
+    std::printf("\n");
+    faceSphereToward(cd(app.cx, app.cy));  // --center also picks the face the sphere view starts on
 
     HINSTANCE hi = GetModuleHandleW(nullptr);
     WNDCLASSW wc = {};
