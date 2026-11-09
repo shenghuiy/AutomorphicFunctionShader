@@ -1,7 +1,7 @@
 #pragma once
 // SL(2,C) matrices acting on the Riemann sphere as Möbius transformations.
-// Shared by the Kleinian group (poincare.cpp) and the icosahedral group
-// (icosahedral.h).
+// Shared by the Kleinian group (poincare/kleinian.h) and the icosahedral group
+// (icosahedral/icosahedral.h).
 
 #include <complex>
 

@@ -1,8 +1,8 @@
 # Mathematical background
 
 This note explains what the renderers plot and why the plot looks the way it
-does. The formulas match the code in `native/poincare.cpp`, `native/shaders.h`
-and `index.html`.
+does. The formulas match the code in `native/poincare/` (`kleinian.h` and
+`poincare.cpp`), `native/common/shaders.h` and `index.html`.
 
 ## The function
 
@@ -138,8 +138,8 @@ elements with the smallest Frobenius norm
 ```
 
 For a fixed $`z`$ in $`\Omega(G)`$, $`|c_g z + d_g|`$ grows like $`\|g\|`$, so terms
-with small norm contribute the most. The enumeration (`enumerateGroup` in
-`native/poincare.cpp`) is a best-first search over reduced words:
+with small norm contribute the most. The enumeration (`kleinian::enumerate` in
+`native/poincare/kleinian.h`) is a best-first search over reduced words:
 
 1. Start from the identity.
 2. Repeatedly take the element with the smallest norm from a min-heap and

@@ -5,8 +5,8 @@
 // subgroup of the Coxeter group H3 = [5,3], i.e. the von Dyck group D(2,3,5).
 // Because G is finite, the sum is exact. See docs/coxeter.md.
 //
-// This header holds the CPU side (group, F, h, Klein's invariant J) and the
-// HLSL snippets that shaders.h splices into the GPU source.
+// This header holds the CPU side: group, F, h and Klein's invariant J.
+// The GPU side is in icosahedral.cpp.
 
 #include <algorithm>
 #include <cmath>
@@ -80,32 +80,3 @@ inline cd kleinJ(cd z) {
 }
 
 }  // namespace icosahedral
-
-// ---------------------------------------------------------------------------
-// HLSL, spliced into SHADER_SRC by shaders.h (string-literal macros so the
-// concatenation happens at compile time).
-// ---------------------------------------------------------------------------
-
-// Compute shader: one term h(g(z)) = (w2/w1)^5 from the shifted matrix.
-// Uses cm and crecip from the compute section of shaders.h.
-#define ICOSAHEDRAL_HLSL_COMPUTE R"HLSL(
-VEC2 icosaTerm(VEC2 w1, VEC2 w2) {
-    VEC2 r=cm(w2,crecip(w1));
-    VEC2 r2=cm(r,r);
-    return cm(cm(r2,r2),r);
-}
-)HLSL"
-
-// Pixel shader: Klein's invariant J in double precision.
-// Uses cdiv from the display section of shaders.h.
-#define ICOSAHEDRAL_HLSL_PIXEL R"HLSL(
-double2 cmd(double2 a,double2 b) { return double2(a.x*b.x-a.y*b.y,a.x*b.y+a.y*b.x); }
-double2 kleinJ(double2 z) {
-    if (z.x*z.x+z.y*z.y>1.0L) z=-cdiv(double2(1,0),z);
-    double2 z5=cmd(cmd(cmd(z,z),cmd(z,z)),z), z10=cmd(z5,z5), z15=cmd(z10,z5), z20=cmd(z10,z10);
-    double2 f=cmd(z,z10+11.0L*z5-double2(1,0));
-    double2 H=-(z20+double2(1,0))+228.0L*(z15-z5)-494.0L*z10;
-    double2 f2=cmd(f,f);
-    return cdiv(cmd(cmd(H,H),H),1728.0L*cmd(cmd(f2,f2),f));
-}
-)HLSL"

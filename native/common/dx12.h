@@ -4,7 +4,7 @@
 #include <d3dcompiler.h>
 #include <wrl/client.h>
 #include <cstring>
-#include "shaders.h"
+#include <string>
 
 using Microsoft::WRL::ComPtr;
 
@@ -21,8 +21,7 @@ struct ViewConstants {
     double cx, cy, scale;
     UINT mode, function;
     float density;
-    UINT group;  // 0 = Kleinian <g1, g2>, 1 = icosahedral rotations
-    UINT padding[2] = {};
+    UINT padding[3] = {};
 };
 static_assert(sizeof(ViewConstants) == 64, "Must match the HLSL constant buffer");
 
@@ -41,6 +40,7 @@ class DxRenderer {
     ComPtr<ID3D12PipelineState> computeF, computeD, display;
     UINT rtvStride = 0, width = 0, height = 0;
     UINT lastBack = 0;
+    std::string source;  // full HLSL: common frame + the group's term/value functions
 
     ComPtr<ID3D12Resource> buffer(UINT64 bytes, D3D12_HEAP_TYPE type,
                                  D3D12_RESOURCE_STATES state, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE) {
@@ -86,7 +86,7 @@ class DxRenderer {
         D3D_SHADER_MACRO macros[] = {{"COMPUTE","1"}, {"VEC2",fp64 ? "double2" : "float2"},
             {"VEC4",fp64 ? "double4" : "float4"}, {fp64 ? "FP64" : nullptr,"1"}, {nullptr,nullptr}};
         ComPtr<ID3DBlob> code, errors;
-        HRESULT hr = D3DCompile(SHADER_SRC, std::strlen(SHADER_SRC), "poincare.hlsl",
+        HRESULT hr = D3DCompile(source.data(), source.size(), "plot.hlsl",
             entry[0] == 'c' ? macros : nullptr, nullptr, entry, target,
             D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_IEEE_STRICTNESS, 0, &code, &errors);
         if (errors) std::fprintf(stderr, "%s\n", (char*)errors->GetBufferPointer());
@@ -114,8 +114,8 @@ class DxRenderer {
 public:
     ~DxRenderer() { if (fenceEvent) CloseHandle(fenceEvent); }
     bool ready() const { return acc != nullptr; }
-    std::string initialize(HWND hwnd, UINT w, UINT h) {
-        // Enable validation when the optional Windows Graphics Tools component is installed.
+    std::string initialize(HWND hwnd, UINT w, UINT h, std::string hlsl) {
+        source = std::move(hlsl);        // Enable validation when the optional Windows Graphics Tools component is installed.
         ComPtr<ID3D12Debug> debug;
         if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)))) debug->EnableDebugLayer();
         ComPtr<IDXGIFactory6> factory;
