@@ -20,7 +20,7 @@ icosahedron acting on the Riemann sphere:
 
 The group is finite, so the sum is exact. The default view is `|Re z|, |Im z| < 2.5`.
 Choose **Icosahedral** in the browser's Group menu, or run the separate native program
-`native\icosahedral\icosahedral.exe`.
+`native\dx12\icosahedral\icosahedral.exe`.
 Its Function choices are `F`, the single term `h`, and Klein's invariant `J`.
 
 ![Phase portrait of the icosahedral automorphic function](docs/icosahedral.png)
@@ -37,24 +37,24 @@ There are two programs, one per group:
 
 | Program | Group | Default center |
 |---|---|---|
-| `native\poincare\poincare.exe` | Kleinian ⟨g₁, g₂⟩, truncated Poincaré series | `0 -0.35` |
-| `native\icosahedral\icosahedral.exe` | 60 icosahedral rotations, exact sum | `0 0` |
+| `native\dx12\poincare\poincare.exe` | Kleinian ⟨g₁, g₂⟩, truncated Poincaré series | `0 -0.35` |
+| `native\dx12\icosahedral\icosahedral.exe` | 60 icosahedral rotations, exact sum | `0 0` |
 
-Run `native\build.bat` to build both, or `native\build.bat poincare` /
-`native\build.bat icosahedral` to build one.
+Run `native\dx12\build.bat` to build both, or `native\dx12\build.bat poincare` /
+`native\dx12\build.bat icosahedral` to build one.
 Group elements are enumerated on the CPU; HLSL compute shaders sum the series per pixel.
 DirectX 12 handles GPU buffers, domain coloring, and presentation. Both summation modes
 accumulate into a double-precision buffer.
 
 Close the running executable before rebuilding, or pass an alternate output name,
-for example `native\build.bat poincare poincare-dx12.exe`.
+for example `native\dx12\build.bat poincare poincare-dx12.exe`.
 
 Optionally set the initial view from the command line:
 
 ```powershell
-.\native\poincare\poincare.exe --center 0 -0.35 --span 5
-.\native\poincare\poincare.exe --center 0.2 -0.6 --span 1.5 --terms 20000 --fp64 --snapshot zoom.png
-.\native\icosahedral\icosahedral.exe --snapshot icosahedral.png
+.\native\dx12\poincare\poincare.exe --center 0 -0.35 --span 5
+.\native\dx12\poincare\poincare.exe --center 0.2 -0.6 --span 1.5 --terms 20000 --fp64 --snapshot zoom.png
+.\native\dx12\icosahedral\icosahedral.exe --snapshot icosahedral.png
 ```
 
 `--center <real> <imag>` sets the complex center.
@@ -76,9 +76,9 @@ Controls (both programs):
 To validate GPU sums against the CPU evaluator at three sample pixels:
 
 ```powershell
-.\native\poincare\poincare.exe --terms 20000 --verify-gpu --snapshot check.png
-.\native\poincare\poincare.exe --terms 1024 --fp64 --verify-gpu --snapshot check-fp64.png
-.\native\icosahedral\icosahedral.exe --fp64 --verify-gpu --snapshot check-icosahedral.png
+.\native\dx12\poincare\poincare.exe --terms 20000 --verify-gpu --snapshot check.png
+.\native\dx12\poincare\poincare.exe --terms 1024 --fp64 --verify-gpu --snapshot check-fp64.png
+.\native\dx12\icosahedral\icosahedral.exe --fp64 --verify-gpu --snapshot check-icosahedral.png
 ```
 
 ## Browser renderer
@@ -89,19 +89,20 @@ Use the on-screen controls to adjust the plot.
 
 ## Source files
 
-- `native/poincare/`: the Kleinian program.
+- `native/dx12/poincare/`: the Kleinian program.
   - `kleinian.h`: generators, reduced-word enumeration, and the CPU Poincaré series.
   - `poincare.cpp`: the group's HLSL term and display value, and `main`.
-- `native/icosahedral/`: the icosahedral program.
+- `native/dx12/icosahedral/`: the icosahedral program.
   - `icosahedral.h`: the 60 rotations, `F`, `h`, and Klein's `J` on the CPU.
   - `icosahedral.cpp`: the group's HLSL term and display value, and `main`.
-- `native/common/`: code shared by both programs.
+- `native/dx12/common/`: code shared by both programs.
   - `app.h`: Win32 window, controls, command line, progressive rendering, GPU checks.
   - `shaders.h`: shared HLSL frame (summation loop and domain coloring) around each group's functions.
   - `dx12.h`: DirectX 12 device, pipelines, resource management, and readback.
   - `mobius.h`: SL(2,C) matrices and Möbius transformations.
   - `png.h`: dependency-free PNG writer.
-- `native/build.bat`: builds one or both programs.
+- `native/dx12/build.bat`: builds one or both programs.
+- `native/metal/`: planned Metal implementation for Apple silicon Macs (not started).
 - `index.html`: browser implementation (WebGL2 shaders, UI, Kleinian group).
 - `complex.js`: complex numbers and Möbius matrices for the browser, shared by both groups.
 - `icosahedral.js`: icosahedral group, `F`, `h`, Klein's `J`, and their GLSL snippets for the browser.
