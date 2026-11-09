@@ -1,6 +1,8 @@
 // Native DirectX 12 renderer for the automorphic function
 //     f(z) = P_{-1,-3}(z) / P_{0,-4}(z),   P_{k,l}(z) = sum_{g in G} (az+b)^k (cz+d)^l
-// for the Kleinian group G = <g1, g2>.
+// for the Kleinian group G = <g1, g2>, and of the icosahedral automorphic function
+//     F(z) = sum_{g in G} h(g(z)),   h(z) = (z - 0.05)^-5
+// for the 60 rotations of the icosahedron acting on the Riemann sphere.
 //
 // The Poincaré series are summed per pixel in a compute shader (fp32 or fp64),
 // accumulated progressively in a double-precision buffer, and displayed with
@@ -10,7 +12,8 @@
 //   drag            pan                 wheel        zoom about cursor
 //   + / -           double / halve the number of group elements
 //   D               toggle fp32 / fp64 summation
-//   M               cycle plot style    F            cycle function (f, P0,-4, P-1,-3)
+//   M               cycle plot style    F            cycle function (f, P0,-4, P-1,-3 / F, h, J)
+//   G               toggle Kleinian / icosahedral group
 //   [ / ]           contour density     R            reset view
 //   I               invariance check (console)
 //   P               save PNG of the current window
@@ -47,22 +50,15 @@ static void fatal(const char* msg) {
     TerminateProcess(GetCurrentProcess(), 1);
 }
 
+#include "mobius.h"
+#include "icosahedral.h"
 #include "dx12.h"
 static DxRenderer renderer;
 
 // ---------------------------------------------------------------------------
-// Group: generators and enumeration of reduced words by matrix norm
+// Kleinian group: generators and enumeration of reduced words by matrix norm.
+// Matrix helpers are in mobius.h; the icosahedral group is in icosahedral.h.
 // ---------------------------------------------------------------------------
-using cd = std::complex<double>;
-struct Mat { cd a, b, c, d; };
-
-static Mat mul(const Mat& p, const Mat& q) {
-    return {p.a * q.a + p.b * q.c, p.a * q.b + p.b * q.d, p.c * q.a + p.d * q.c, p.c * q.b + p.d * q.d};
-}
-static Mat inv(const Mat& m) { return {m.d, -m.b, -m.c, m.a}; }  // det = 1
-static double norm2(const Mat& m) { return std::norm(m.a) + std::norm(m.b) + std::norm(m.c) + std::norm(m.d); }
-static cd mobius(const Mat& m, cd z) { return (m.a * z + m.b) / (m.c * z + m.d); }
-
 static const cd B(-0.10997580175045825, -0.0011537600196144);
 static const cd Cc(0.07184238006772357, -1.8193355782014326);
 static const Mat G1 = {cd(1, 0.1), B, Cc, cd(1, 0.1)};
@@ -181,9 +177,11 @@ struct App {
     size_t N = size_t(1) << 17;
     bool fp64 = false;
     int mode = 0, func = 0;
+    int group = 0;  // 0 = Kleinian <g1, g2>, 1 = icosahedral rotations
     float dens = 1.0f;
 
     std::vector<Mat> mats;
+    std::vector<Mat> ico;  // icosahedral rotations (mats holds them shifted by -0.05)
     int count = 0, done = 0, chunk = 256;
     Clock::time_point startT;
     double renderMs = 0;
@@ -207,9 +205,22 @@ static void restart() {
     app.startT = Clock::now();
 }
 
+// Kleinian default: 0 - 0.35i; icosahedral default: |Re z|, |Im z| < 2.5.
+static void resetView() {
+    app.cx = 0;
+    app.cy = app.group == 1 ? 0.0 : -0.35;
+    app.span = 5.0;
+}
+
 static void buildGroup() {
     auto t0 = Clock::now();
-    app.mats = enumerateGroup(app.N);
+    if (app.group == 1) {
+        app.ico = icosahedral::group();
+        if (app.ico.size() != icosahedral::ORDER) fatal("Icosahedral group closure did not give 60 elements");
+        app.mats = icosahedral::gpuMatrices(app.ico);
+    } else {
+        app.mats = enumerateGroup(app.N);
+    }
     app.count = int(app.mats.size());
     std::vector<float> f(app.mats.size() * 8);
     std::vector<double> d(app.mats.size() * 8);
@@ -219,8 +230,11 @@ static void buildGroup() {
         for (int k = 0; k < 8; k++) { d[8 * i + k] = v[k]; f[8 * i + k] = float(v[k]); }
     }
     renderer.matrices(f, d);
-    std::printf("group: %d elements, max ||g|| = %.1f  (enumerated in %.0f ms)\n", app.count,
-                std::sqrt(norm2(app.mats.back())), msSince(t0));
+    if (app.group == 1)
+        std::printf("group: icosahedral rotations, %d elements (exact sum)\n", app.count);
+    else
+        std::printf("group: %d elements, max ||g|| = %.1f  (enumerated in %.0f ms)\n", app.count,
+                    std::sqrt(norm2(app.mats.back())), msSince(t0));
     restart();
 }
 
@@ -234,6 +248,15 @@ static void resize(int w, int h) {
 
 static void invarianceCheck() {
     cd z0(0.3, 0.6);
+    if (app.group == 1) {
+        cd Fz = icosahedral::F(app.ico, z0);
+        std::printf("\ninvariance check, icosahedral group (exact), z0 = 0.3+0.6i\n  F(z0)        = %+.8g %+.8gi\n", Fz.real(), Fz.imag());
+        for (int k = 0; k < 4; k++) {
+            cd Fg = icosahedral::F(app.ico, mobius(icosahedral::GENS[k], z0));
+            std::printf("  F(%-5s(z0)) = %+.8g %+.8gi   rel.err %.1e\n", icosahedral::GEN_NAMES[k], Fg.real(), Fg.imag(), std::abs(Fg - Fz) / std::abs(Fz));
+        }
+        return;
+    }
     cd fz = evalSeries(app.mats, z0).f;
     std::printf("\ninvariance check with %d elements, z0 = 0.3+0.6i\n  f(z0)        = %+.8f %+.8fi\n", app.count, fz.real(), fz.imag());
     const char* names[4] = {"g1", "g1^-1", "g2", "g2^-1"};
@@ -251,15 +274,18 @@ static void updateTitle() {
     int px = std::clamp(app.mx, 0, app.W - 1), py = std::clamp(app.my, 0, app.H - 1);
     renderer.readPixel(px, py, a);
     cd P1(a[0], a[1]), P2(a[2], a[3]);
-    cd val = app.func == 0 ? P1 / P2 : (app.func == 1 ? P2 : P1);
     cd z = app.toZ(app.mx, app.my);
-    const char* fn[3] = {"f", "P0,-4", "P-1,-3"};
+    bool ico = app.group == 1;
+    cd val = ico ? (app.func == 0 ? P1 : (app.func == 1 ? P2 : icosahedral::kleinJ(z)))
+                 : (app.func == 0 ? P1 / P2 : (app.func == 1 ? P2 : P1));
+    const char* fn[2][3] = {{"f", "P0,-4", "P-1,-3"}, {"F", "h", "J"}};
     char buf[512];
     std::snprintf(buf, sizeof buf,
-                  "Poincaré series  |  %s  |  %s  |  terms %d/%d %s |  z = %.6f%+.6fi   %s(z) = %.6g%+.6gi  |  width %.3g",
+                  "%s  |  %s  |  %s  |  terms %d/%d %s |  z = %.6f%+.6fi   %s(z) = %.6g%+.6gi  |  width %.3g",
+                  ico ? "Icosahedral group" : "Poincaré series",
                   app.gpu.c_str(), app.fp64 ? "fp64" : "fp32", app.done, app.count,
                   app.done < app.count ? "" : (std::string("(") + std::to_string(int(app.renderMs)) + " ms) ").c_str(),
-                  z.real(), z.imag(), fn[app.func], val.real(), val.imag(), app.scale() * app.W);
+                  z.real(), z.imag(), fn[app.group][app.func], val.real(), val.imag(), app.scale() * app.W);
     wchar_t wbuf[512];
     MultiByteToWideChar(CP_UTF8, 0, buf, -1, wbuf, 512);
     SetWindowTextW(app.hwnd, wbuf);
@@ -274,9 +300,17 @@ static void verifyGpuValues() {
     for (const auto& p : points) {
         double sums[4];
         renderer.readPixel(p[0],p[1],sums);
-        auto expected = evalSeries(app.mats,app.toZ(p[0],p[1]));
+        cd z = app.toZ(p[0],p[1]);
         cd actual[] = {{sums[0],sums[1]},{sums[2],sums[3]}};
-        cd reference[] = {expected.P1,expected.P2};
+        cd reference[2];
+        if (app.group == 1) {
+            reference[0] = icosahedral::F(app.ico,z);
+            reference[1] = icosahedral::h(z);
+        } else {
+            auto expected = evalSeries(app.mats,z);
+            reference[0] = expected.P1;
+            reference[1] = expected.P2;
+        }
         for (int i=0;i<2;++i) {
             double error=std::abs(actual[i]-reference[i])/std::max(1e-30,std::abs(reference[i]));
             std::printf("GPU check (%d,%d) P%d: relative error %.3e\n",p[0],p[1],i+1,error);
@@ -301,7 +335,7 @@ static void savePNG(const char* path = nullptr) {
 
 static ViewConstants viewConstants(int start, int end) {
     return {UINT(start), UINT(end), UINT(app.W), UINT(app.H), app.cx, app.cy, app.scale(),
-            UINT(app.mode), UINT(app.func), app.dens};
+            UINT(app.mode), UINT(app.func), app.dens, UINT(app.group)};
 }
 
 static void frame() {
@@ -380,14 +414,15 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_CHAR:
         switch (wp) {
-        case '+': case '=': app.N = std::min<size_t>(app.N * 2, size_t(1) << 22); buildGroup(); break;
-        case '-': case '_': app.N = std::max<size_t>(app.N / 2, 256); buildGroup(); break;
+        case '+': case '=': if (app.group == 0) { app.N = std::min<size_t>(app.N * 2, size_t(1) << 22); buildGroup(); } break;
+        case '-': case '_': if (app.group == 0) { app.N = std::max<size_t>(app.N / 2, 256); buildGroup(); } break;
+        case 'g': case 'G': app.group = 1 - app.group; resetView(); buildGroup(); break;
         case 'd': case 'D': app.fp64 = !app.fp64; app.chunk = 64; restart(); break;
         case 'm': case 'M': app.mode = (app.mode + 1) % 4; break;
         case 'f': case 'F': app.func = (app.func + 1) % 3; break;
         case '[': app.dens = std::max(0.25f, app.dens / 1.25f); break;
         case ']': app.dens = std::min(8.0f, app.dens * 1.25f); break;
-        case 'r': case 'R': app.cx = 0; app.cy = -0.35; app.span = 5.0; restart(); break;
+        case 'r': case 'R': resetView(); restart(); break;
         case 'i': case 'I': invarianceCheck(); break;
         case 'p': case 'P': app.saveRequested = true; break;
         case 27: PostQuitMessage(0); break;
@@ -409,7 +444,7 @@ int main(int argc, char** argv) {
         value = std::strtod(text, &end);
         return end != text && *end == '\0' && errno != ERANGE && std::isfinite(value);
     };
-    bool help = false;
+    bool help = false, centerGiven = false;
     for (int i = 1; i < argc; i++) {
         const std::string option = argv[i];
         if (option == "--help" || option == "-h") {
@@ -423,7 +458,17 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "--center requires two finite numbers: <real> <imag>\n");
                 return 1;
             }
+            centerGiven = true;
             i += 2;
+        } else if (option == "--group") {
+            const std::string name = i + 1 < argc ? argv[i + 1] : "";
+            if (name == "kleinian") app.group = 0;
+            else if (name == "icosahedral") app.group = 1;
+            else {
+                std::fprintf(stderr, "--group requires kleinian or icosahedral\n");
+                return 1;
+            }
+            ++i;
         } else if (option == "--span") {
             if (i + 1 >= argc || !readNumber(argv[i + 1], app.span) || app.span <= 0) {
                 std::fprintf(stderr, "--span requires a finite number greater than zero\n");
@@ -456,19 +501,22 @@ int main(int argc, char** argv) {
     if (help) {
         std::printf(
             "Usage: poincare.exe [options]\n"
-            "  --center <real> <imag>  Plot center (default: 0 -0.35)\n"
+            "  --group <name>          kleinian (default) or icosahedral\n"
+            "  --center <real> <imag>  Plot center (default: 0 -0.35; icosahedral: 0 0)\n"
             "  --span <value>          Shorter-side extent in complex units (default: 5)\n"
-            "  --terms <count>         Number of group elements (default: 131072)\n"
+            "  --terms <count>         Number of Kleinian group elements (default: 131072)\n"
             "  --fp64                  Use double-precision summation\n"
             "  --snapshot <file.png>   Render, save, and exit\n"
             "  --verify-gpu            Check GPU sums against CPU when saving a snapshot\n"
             "  --help, -h              Show this help\n");
         return 0;
     }
+    if (app.group == 1 && !centerGiven) app.cy = 0.0;
     std::printf(
         "Poincaré series  f(z) = P_{-1,-3}(z) / P_{0,-4}(z),  G = <g1, g2>\n"
+        "Icosahedral      F(z) = sum_g h(g(z)),  h(z) = (z - 0.05)^-5,  60 rotations\n"
         "  drag: pan   wheel: zoom   +/-: elements x2 / /2   D: fp32/fp64   M: plot style\n"
-        "  F: function   [ ]: contour density   R: reset   I: invariance check   P: save PNG   Esc: quit\n\n");
+        "  F: function   G: group   [ ]: contour density   R: reset   I: invariance check   P: save PNG   Esc: quit\n\n");
 
     HINSTANCE hi = GetModuleHandleW(nullptr);
     WNDCLASSW wc = {};

@@ -31,8 +31,14 @@
 <body>
 <canvas id="c"></canvas>
 <div id="panel">
-  <h1>f(z) = P<sub>−1,−3</sub>(z) / P<sub>0,−4</sub>(z)</h1>
-  <div class="formula">P<sub>k,l</sub>(z) = Σ<sub>g∈G</sub> (az+b)<sup>k</sup>(cz+d)<sup>l</sup>, G = ⟨g₁, g₂⟩</div>
+  <h1 id="title">f(z) = P<sub>−1,−3</sub>(z) / P<sub>0,−4</sub>(z)</h1>
+  <div class="formula" id="formula">P<sub>k,l</sub>(z) = Σ<sub>g∈G</sub> (az+b)<sup>k</sup>(cz+d)<sup>l</sup>, G = ⟨g₁, g₂⟩</div>
+  <label>Group
+    <select id="group">
+      <option value="0">Kleinian ⟨g₁, g₂⟩</option>
+      <option value="1">Icosahedral (60 rotations)</option>
+    </select>
+  </label>
   <label>Group elements <span><input id="nTerms" type="range" min="3" max="5.3" step="0.05" value="4.3"> <span id="nTermsVal"></span></span></label>
   <label>Plot
     <select id="mode">
@@ -69,29 +75,14 @@
 <button id="toggle" style="background:#1c1f27;color:#e8e8ea;border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px 10px;cursor:pointer">Hide panel</button>
 <div id="err"></div>
 
+<script src="complex.js"></script>
+<script src="icosahedral.js"></script>
 <script>
 "use strict";
-// ---------------------------------------------------------------------------
-// Complex arithmetic (double precision, CPU side)
-// ---------------------------------------------------------------------------
-const C = (re, im = 0) => [re, im];
-const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
-const mul = (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]];
-const div = (a, b) => { const d = b[0] * b[0] + b[1] * b[1]; return [(a[0] * b[0] + a[1] * b[1]) / d, (a[1] * b[0] - a[0] * b[1]) / d]; };
-const abs2 = a => a[0] * a[0] + a[1] * a[1];
-const neg = a => [-a[0], -a[1]];
-
-// Matrix [a,b,c,d] of complex numbers
-const mmul = (P, Q) => [
-  add(mul(P[0], Q[0]), mul(P[1], Q[2])), add(mul(P[0], Q[1]), mul(P[1], Q[3])),
-  add(mul(P[2], Q[0]), mul(P[3], Q[2])), add(mul(P[2], Q[1]), mul(P[3], Q[3])),
-];
-const minv = M => [M[3], neg(M[1]), neg(M[2]), M[0]]; // det = 1
-const mnorm2 = M => abs2(M[0]) + abs2(M[1]) + abs2(M[2]) + abs2(M[3]);
-const mobius = (M, z) => div(add(mul(M[0], z), M[1]), add(mul(M[2], z), M[3]));
+// Complex and matrix helpers are in complex.js; the icosahedral group is in icosahedral.js.
 
 // ---------------------------------------------------------------------------
-// Generators from the text
+// Kleinian group: generators from the text
 // ---------------------------------------------------------------------------
 const b = C(-0.10997580175045825, -0.0011537600196144);
 const c = C(0.07184238006772357, -1.8193355782014326);
@@ -161,11 +152,12 @@ const VS = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
 
 // Accumulation pass: adds CHUNK terms of both series into an RGBA32F buffer.
-// rg = P_{-1,-3}(z) = Σ 1/((az+b)(cz+d)^3),  ba = P_{0,-4}(z) = Σ 1/(cz+d)^4
+// Kleinian:    rg = P_{-1,-3}(z) = Σ 1/((az+b)(cz+d)^3),  ba = P_{0,-4}(z) = Σ 1/(cz+d)^4
+// Icosahedral (icosahedral.js): rg = F(z) = Σ h(g(z)),  ba = h(z) (the identity term only)
 const ACC_FS = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
 uniform sampler2D uMats, uPrev;
-uniform int uStart, uCount, uTexW;
+uniform int uStart, uCount, uTexW, uGroup;
 uniform vec2 uCenter, uRes;
 uniform float uScale;
 out vec4 o;
@@ -177,6 +169,7 @@ vec2 cinv(vec2 a){
   vec2 t = a / s;
   return vec2(t.x, -t.y) / (dot(t, t) * s);
 }
+${Icosahedral.GLSL_ACC}
 void main(){
   ivec2 px = ivec2(gl_FragCoord.xy);
   vec4 acc = texelFetch(uPrev, px, 0);
@@ -189,6 +182,12 @@ void main(){
     vec4 cd = texelFetch(uMats, ivec2((t + 1) % uTexW, t / uTexW), 0);
     vec2 w1 = cm(ab.xy, z) + ab.zw;
     vec2 w2 = cm(cd.xy, z) + cd.zw;
+    if (uGroup == 1) {
+      vec2 t = icosaTerm(w1, w2);
+      acc.xy += t;
+      if (idx == 0) acc.zw += t;
+      continue;
+    }
     vec2 i2 = cinv(w2);
     vec2 i2s = cm(i2, i2);
     vec2 i3 = cm(i2s, i2);
@@ -202,16 +201,18 @@ void main(){
 const DISP_FS = `#version 300 es
 precision highp float; precision highp sampler2D;
 uniform sampler2D uAcc;
-uniform int uMode, uFunc;
+uniform int uMode, uFunc, uGroup;
 uniform float uDens;
 uniform vec2 uCenter, uRes;
 uniform float uScale;
 out vec4 o;
 const float PI = 3.14159265358979;
+vec2 cm(vec2 a, vec2 b){ return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
 vec2 cdiv(vec2 a, vec2 b){
   float s = max(abs(b.x), abs(b.y)); a /= s; b /= s;
   return vec2(a.x*b.x + a.y*b.y, a.y*b.x - a.x*b.y) / dot(b, b);
 }
+${Icosahedral.GLSL_DISP}
 vec3 hsv(float h, float s, float v){
   vec3 k = clamp(abs(mod(h*6.0 + vec3(0,4,2), 6.0) - 3.0) - 1.0, 0.0, 1.0);
   return v * mix(vec3(1.0), k*k*(3.0-2.0*k), s);
@@ -221,7 +222,13 @@ float saw(float x){ float f = fract(x); float w = fwidth(x); return mix(f, 0.5, 
 float gridline(float x){ float w = max(fwidth(x), 1e-6); float d = abs(fract(x - 0.5) - 0.5) / w; return 1.0 - smoothstep(0.0, 1.2, d); }
 void main(){
   vec4 a = texelFetch(uAcc, ivec2(gl_FragCoord.xy), 0);
-  vec2 f = uFunc == 0 ? cdiv(a.xy, a.zw) : (uFunc == 1 ? a.zw : a.xy);
+  vec2 f;
+  if (uGroup == 1) {
+    vec2 z = uCenter + (gl_FragCoord.xy - 0.5 * uRes) * uScale;
+    f = uFunc == 0 ? a.xy : (uFunc == 1 ? a.zw : kleinJ(z));
+  } else {
+    f = uFunc == 0 ? cdiv(a.xy, a.zw) : (uFunc == 1 ? a.zw : a.xy);
+  }
   if (any(isnan(f)) ) { o = vec4(1.0); return; }
   float arg = atan(f.y, f.x);
   float h = fract(arg / (2.0*PI));
@@ -241,8 +248,9 @@ void main(){
     float g = max(gridline(f.x * s * 4.0 * uDens), gridline(f.y * s * 4.0 * uDens));
     col = mix(base * 0.95, vec3(0.05), 0.75 * g);
   }
-  // fade where the value blows up (poles) / vanishes (zeros)
-  col *= mix(1.0, 0.0, smoothstep(14.0, 24.0, abs(lm)) );
+  // fade where the value blows up (poles) / vanishes (zeros). Skipped for the icosahedral
+  // sum: F is typically around 2^13 there, and its poles read clearly without the fade.
+  if (uGroup == 0) col *= mix(1.0, 0.0, smoothstep(14.0, 24.0, abs(lm)) );
   o = vec4(pow(col, vec3(1.0/1.1)), 1.0);
 }`;
 
@@ -284,14 +292,35 @@ const TEXW = 4096;
 let mats = [], matTex = null, count = 0;
 let accTex = [null, null], fbo = [gl.createFramebuffer(), gl.createFramebuffer()], ping = 0;
 let W = 0, H = 0, done = 0, passesPerFrame = 2;
-const DEFAULT_VIEW = { cx: 0, cy: -0.35, scale: 0 };
-let view = { ...DEFAULT_VIEW };
+const DEFAULT_VIEWS = [{ cx: 0, cy: -0.35, scale: 0 }, { cx: 0, cy: 0, scale: 0 }];
+let view = { ...DEFAULT_VIEWS[0] };
 const ui = id => document.getElementById(id);
+const isIcosa = () => +ui('group').value === 1;
+let icoMats = []; // the 60 rotations themselves (mats holds them pre-shifted by −0.05)
+
+const GROUP_TEXT = [
+  { title: 'f(z) = P<sub>−1,−3</sub>(z) / P<sub>0,−4</sub>(z)',
+    formula: 'P<sub>k,l</sub>(z) = Σ<sub>g∈G</sub> (az+b)<sup>k</sup>(cz+d)<sup>l</sup>, G = ⟨g₁, g₂⟩',
+    funcs: ['f = P₋₁,₋₃ / P₀,₋₄', 'P₀,₋₄ (automorphic form)', 'P₋₁,₋₃ (automorphic form)'] },
+  Icosahedral.TEXT,
+];
 
 function buildGroup() {
-  const N = Math.round(Math.pow(10, +ui('nTerms').value));
-  ui('nTermsVal').textContent = N.toLocaleString();
-  mats = enumerate(N); count = mats.length;
+  const ico = isIcosa();
+  const G = GROUP_TEXT[+ico];
+  ui('title').innerHTML = G.title; ui('formula').innerHTML = G.formula;
+  [...ui('func').options].forEach((o, i) => { o.textContent = G.funcs[i]; });
+  ui('nTerms').disabled = ico;
+  if (ico) {
+    icoMats = Icosahedral.group();
+    if (icoMats.length !== Icosahedral.ORDER) fail(`Icosahedral group closure gave ${icoMats.length} elements, expected 60`);
+    mats = Icosahedral.gpuMatrices(icoMats); count = mats.length;
+    ui('nTermsVal').textContent = '60 (exact)';
+  } else {
+    const N = Math.round(Math.pow(10, +ui('nTerms').value));
+    ui('nTermsVal').textContent = N.toLocaleString();
+    mats = enumerate(N); count = mats.length;
+  }
   const rows = Math.ceil(2 * count / TEXW);
   const data = new Float32Array(TEXW * rows * 4);
   mats.forEach((M, i) => {
@@ -299,8 +328,7 @@ function buildGroup() {
   });
   if (matTex) gl.deleteTexture(matTex);
   matTex = floatTex(TEXW, rows, data);
-  const maxN = Math.sqrt(mnorm2(mats[mats.length - 1]));
-  ui('stat').dataset.norm = maxN.toFixed(1);
+  ui('stat').dataset.norm = ico ? 'finite group, exact sum' : `‖g‖ ≤ ${Math.sqrt(mnorm2(mats[mats.length - 1])).toFixed(1)}`;
   restart();
 }
 
@@ -339,6 +367,7 @@ function frame(t) {
     gl.useProgram(accProg.p);
     gl.uniform1i(accProg.u.uMats, 0); gl.uniform1i(accProg.u.uPrev, 1);
     gl.uniform1i(accProg.u.uCount, count); gl.uniform1i(accProg.u.uTexW, TEXW);
+    gl.uniform1i(accProg.u.uGroup, +isIcosa());
     gl.uniform2f(accProg.u.uCenter, view.cx, view.cy); gl.uniform2f(accProg.u.uRes, W, H);
     gl.uniform1f(accProg.u.uScale, view.scale);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, matTex);
@@ -360,6 +389,7 @@ function frame(t) {
   gl.uniform1i(dispProg.u.uAcc, 0);
   gl.uniform1i(dispProg.u.uMode, +ui('mode').value);
   gl.uniform1i(dispProg.u.uFunc, +ui('func').value);
+  gl.uniform1i(dispProg.u.uGroup, +isIcosa());
   gl.uniform1f(dispProg.u.uDens, +ui('dens').value);
   gl.uniform2f(dispProg.u.uCenter, view.cx, view.cy); gl.uniform2f(dispProg.u.uRes, W, H);
   gl.uniform1f(dispProg.u.uScale, view.scale);
@@ -367,7 +397,7 @@ function frame(t) {
 
   ui('bar').firstElementChild.style.width = (100 * done / count).toFixed(1) + '%';
   ui('stat').textContent =
-    `terms summed  ${done.toLocaleString()} / ${count.toLocaleString()}  (‖g‖ ≤ ${ui('stat').dataset.norm})\n` +
+    `terms summed  ${done.toLocaleString()} / ${count.toLocaleString()}  (${ui('stat').dataset.norm})\n` +
     `gpu           ${GPU_NAME}\n` +
     `view          ${view.cx.toFixed(4)} ${view.cy >= 0 ? '+' : '−'} ${Math.abs(view.cy).toFixed(4)}i, width ${(view.scale * W).toPrecision(3)}`;
   requestAnimationFrame(frame);
@@ -414,6 +444,11 @@ function hover(x, y) {
   clearTimeout(hoverTimer);
   hoverTimer = setTimeout(() => {
     const z = toZ(x, y);
+    if (isIcosa()) {
+      const F = Icosahedral.F(icoMats, z), J = Icosahedral.kleinJ(z);
+      ui('cursor').textContent = `z             ${fmt(z)}\nF(z)          ${fmt(F)}\nJ(z)          ${fmt(J)}`;
+      return;
+    }
     const sub = mats.length > 20000 ? mats.slice(0, 20000) : mats;
     const { f } = evalSeries(sub, z);
     ui('cursor').textContent = `z             ${fmt(z)}\nf(z)          ${fmt(f)}`;
@@ -421,6 +456,19 @@ function hover(x, y) {
 }
 
 ui('check').onclick = () => {
+  if (isIcosa()) {
+    // exact for a finite group: only rounding error remains
+    const z = [0.3, 0.6];
+    const Fz = Icosahedral.F(icoMats, z);
+    const lines = [`F(z₀), z₀=0.3+0.6i  ${fmt(Fz)}`];
+    Icosahedral.GEN_NAMES.forEach((nm, k) => {
+      const Fg = Icosahedral.F(icoMats, mobius(Icosahedral.GENS[k], z));
+      const err = Math.sqrt(abs2(add(Fg, neg(Fz)))) / Math.sqrt(abs2(Fz));
+      lines.push(`F(${nm}(z₀))`.padEnd(14) + `${fmt(Fg)}   rel.err ${err.toExponential(1)}`);
+    });
+    ui('inv').textContent = lines.join('\n');
+    return;
+  }
   // f(g(z)) should equal f(z) for every generator, up to truncation error
   const z = [0.3, 0.6];
   const fz = evalSeries(mats, z).f;
@@ -432,7 +480,8 @@ ui('check').onclick = () => {
   });
   ui('inv').textContent = lines.join('\n');
 };
-ui('reset').onclick = () => { view = { ...DEFAULT_VIEW, scale: 5.0 / Math.min(W, H) }; restart(); };
+ui('reset').onclick = () => { view = { ...DEFAULT_VIEWS[+isIcosa()], scale: 5.0 / Math.min(W, H) }; restart(); };
+ui('group').onchange = () => { ui('inv').textContent = ''; ui('reset').onclick(); buildGroup(); };
 ui('nTerms').oninput = () => { ui('nTermsVal').textContent = Math.round(Math.pow(10, +ui('nTerms').value)).toLocaleString(); };
 ui('nTerms').onchange = buildGroup;
 ui('res').onchange = () => { W = 0; resize(); };

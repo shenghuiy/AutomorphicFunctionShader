@@ -1,4 +1,5 @@
 #pragma once
+#include "icosahedral.h"  // ICOSAHEDRAL_HLSL_COMPUTE / ICOSAHEDRAL_HLSL_PIXEL
 
 // Compiled at startup with the Windows SDK's HLSL compiler.
 static const char* SHADER_SRC = R"HLSL(
@@ -8,6 +9,7 @@ cbuffer View : register(b0) {
     double uScale;
     uint uMode, uFunc;
     float uDens;
+    uint uGroup;  // 0 = Kleinian <g1, g2>, 1 = icosahedral rotations
 };
 
 #ifdef COMPUTE
@@ -27,6 +29,7 @@ VEC2 crecip(VEC2 q) {
     return float2(t.x, -t.y) * (rs / dot(t,t));
 #endif
 }
+)HLSL" ICOSAHEDRAL_HLSL_COMPUTE R"HLSL(
 [numthreads(16,16,1)]
 void compute(uint3 p : SV_DispatchThreadID, uint lid : SV_GroupIndex) {
     bool inside = p.x < uW && p.y < uH;
@@ -46,6 +49,12 @@ void compute(uint3 p : SV_DispatchThreadID, uint lid : SV_GroupIndex) {
             for (uint i=0; i<n; ++i) {
                 VEC4 ab=tileM[2*i], cd=tileM[2*i+1];
                 VEC2 w1=cm(ab.xy,z)+ab.zw, w2=cm(cd.xy,z)+cd.zw;
+                if (uGroup==1) {
+                    // icosahedral.h: .xy = F = sum of h(g(z)), .zw = h(z) (identity term only)
+                    VEC2 t=icosaTerm(w1,w2);
+                    sum += VEC4(t, base+i==0 ? t : (VEC2)0);
+                    continue;
+                }
                 VEC2 w2s=cm(w2,w2);
                 VEC2 r=crecip(cm(w1,cm(w2s,w2s)));
                 sum += VEC4(cm(w2,r),cm(w1,r));
@@ -70,6 +79,7 @@ double2 cdiv(double2 a,double2 b) {
     a/=s; b/=s;
     return double2(a.x*b.x+a.y*b.y,a.y*b.x-a.x*b.y)/(b.x*b.x+b.y*b.y);
 }
+)HLSL" ICOSAHEDRAL_HLSL_PIXEL R"HLSL(
 float3 hsv(float h) {
     float3 k=saturate(abs((frac((h*6.0+float3(0,4,2))/6.0)*6.0)-3.0)-1.0);
     return lerp(float3(1,1,1),k*k*(3.0-2.0*k),0.9);
@@ -83,7 +93,13 @@ float4 pixel(float4 position : SV_Position) : SV_Target {
     // fwidth) one pixel outside the target, which would read past acc.
     uint2 p=min((uint2)position.xy,uint2(uW-1,uH-1));
     double4 a=acc[p.y*uW+p.x];
-    double2 fd=uFunc==0 ? cdiv(a.xy,a.zw) : (uFunc==1 ? a.zw : a.xy);
+    double2 fd;
+    if (uGroup==1) {
+        float2 offset=float2((float)p.x+0.5-0.5*uW,0.5*uH-0.5-(float)p.y);
+        fd=uFunc==0 ? a.xy : (uFunc==1 ? a.zw : kleinJ(uCenter+(double2)offset*uScale));
+    } else {
+        fd=uFunc==0 ? cdiv(a.xy,a.zw) : (uFunc==1 ? a.zw : a.xy);
+    }
     double s=max(abs(fd.x),abs(fd.y));
     if (!(s>0.0L)) return float4(0,0,0,1);
     float2 dir=(float2)(fd/s);
@@ -99,7 +115,9 @@ float4 pixel(float4 position : SV_Position) : SV_Target {
         float2 fs=dir*exp2(log2((float)s)-floor(lm))*4.0*uDens;
         col=lerp(base*0.95,float3(0.05,0.05,0.05),0.75*max(gridline(fs.x),gridline(fs.y)));
     }
-    col*=1.0-smoothstep(14.0,24.0,abs(lm));
+    // Fade near poles and zeros. Skipped for the icosahedral sum: F is
+    // typically around 2^13 there, and its poles read clearly without it.
+    if (uGroup==0) col*=1.0-smoothstep(14.0,24.0,abs(lm));
     return float4(pow(abs(col),1.0/1.1),1);
 }
 #endif

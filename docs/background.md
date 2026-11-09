@@ -187,6 +187,10 @@ Some features are easy to spot:
 
 ## Further reading
 
+- [coxeter.md](coxeter.md): the finite counterpart in this repo. It covers the
+  icosahedral group, Coxeter and triangle groups, and how averaging over a finite
+  group relates to these Poincaré series.
+
 - H. Poincaré, "Mémoire sur les groupes kleinéens", *Acta Mathematica* 3
   (1883).
 - D. Mumford, C. Series and D. Wright, *Indra's Pearls: The Vision of Felix
