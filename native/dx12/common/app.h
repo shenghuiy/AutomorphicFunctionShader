@@ -11,6 +11,7 @@
 //   + / -           double / halve the number of group elements (infinite groups)
 //   D               toggle fp32 / fp64 summation
 //   M               cycle plot style    F            cycle displayed function
+//   C               phase colours: hue wheel / Mathematica's GreenPinkTones
 //   [ / ]           contour density     R            reset view
 //   S               plane / Riemann sphere view (groups with Group::sphere);
 //                   in the sphere view, drag rotates and the wheel zooms
@@ -75,6 +76,8 @@ struct Group {
     void (*invariance)();
     // Offer the Riemann sphere view (S key, --sphere).
     bool sphere = false;
+    // Phase colours at start-up (C key): 0 hue wheel, 1 GreenPinkTones.
+    int palette = 0;
 };
 
 using Clock = std::chrono::steady_clock;
@@ -92,7 +95,7 @@ struct App {
     double sphereZoom = 1.0;
     size_t N = 0;
     bool fp64 = false;
-    int mode = 0, func = 0;
+    int mode = 0, func = 0, palette = 0;
     float dens = 1.0f;
 
     int count = 0, done = 0, chunk = 256;
@@ -295,6 +298,7 @@ static ViewConstants viewConstants(int start, int end) {
     ViewConstants v = {UINT(start), UINT(end), UINT(app.W), UINT(app.H), app.cx, app.cy, app.scale(),
                        UINT(app.mode), UINT(app.func), app.dens, UINT(app.sphere), app.radius()};
     std::memcpy(v.rot, app.rot, sizeof v.rot);
+    v.palette = UINT(app.palette);
     return v;
 }
 
@@ -386,6 +390,7 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case 'd': case 'D': app.fp64 = !app.fp64; app.chunk = 64; restart(); break;
         case 'm': case 'M': app.mode = (app.mode + 1) % 4; break;
         case 'f': case 'F': app.func = (app.func + 1) % 3; break;
+        case 'c': case 'C': app.palette = (app.palette + 1) % 2; break;
         case '[': app.dens = std::max(0.25f, app.dens / 1.25f); break;
         case ']': app.dens = std::min(8.0f, app.dens * 1.25f); break;
         case 'r': case 'R': resetView(); restart(); break;
@@ -407,6 +412,7 @@ static int runApp(const Group& group, int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     app.group = &group;
     app.N = group.defaultTerms;
+    app.palette = group.palette;
     resetView();
     const bool variableTerms = group.defaultTerms > 0;
     auto readNumber = [](const char* text, double& value) {
@@ -437,6 +443,14 @@ static int runApp(const Group& group, int argc, char** argv) {
                 std::fprintf(stderr, "--span requires a finite number greater than zero\n");
                 return 1;
             }
+            ++i;
+        } else if (option == "--function") {
+            double index = -1;
+            if (i + 1 >= argc || !readNumber(argv[i + 1], index) || (index != 0 && index != 1 && index != 2)) {
+                std::fprintf(stderr, "--function requires 0, 1 or 2\n");
+                return 1;
+            }
+            app.func = int(index);
             ++i;
         } else if (option == "--snapshot") {
             if (i + 1 >= argc || argv[i + 1][0] == '\0' || std::string(argv[i + 1]).rfind("--", 0) == 0) {
@@ -469,6 +483,8 @@ static int runApp(const Group& group, int argc, char** argv) {
             std::printf("  --terms <count>         Number of group elements (default: %zu)\n", group.defaultTerms);
         if (group.sphere)
             std::printf("  --sphere                Start in the Riemann sphere view, centre facing the viewer\n");
+        std::printf("  --function <0|1|2>      Displayed function: %s, %s or %s (default: 0)\n",
+                    group.funcNames[0], group.funcNames[1], group.funcNames[2]);
         std::printf(
             "  --fp64                  Use double-precision summation\n"
             "  --snapshot <file.png>   Render, save, and exit\n"
@@ -479,7 +495,7 @@ static int runApp(const Group& group, int argc, char** argv) {
     std::printf("%s  %s\n", group.title, group.formula);
     std::printf("  drag: pan   wheel: zoom   %sD: fp32/fp64   M: plot style\n",
                 variableTerms ? "+/-: elements x2 / /2   " : "");
-    std::printf("  F: function (%s, %s, %s)   [ ]: contour density   R: reset   I: invariance check   P: save PNG   Esc: quit\n",
+    std::printf("  F: function (%s, %s, %s)   C: colours (hue wheel / GreenPinkTones)\n  [ ]: contour density   R: reset   I: invariance check   P: save PNG   Esc: quit\n",
                 group.funcNames[0], group.funcNames[1], group.funcNames[2]);
     if (group.sphere) std::printf("  S: plane / Riemann sphere (in the sphere view, drag rotates and the wheel zooms)\n");
     std::printf("\n");

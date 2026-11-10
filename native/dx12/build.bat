@@ -1,18 +1,19 @@
 @echo off
 rem Builds the native renderers with the MSVC x64 toolchain (Visual Studio 2022 or Build Tools).
 rem
-rem   build.bat                          native\build\poincare.exe and native\build\icosahedral.exe
+rem   build.bat                          poincare.exe, icosahedral.exe and pearcey.exe in native\build
 rem   build.bat poincare                 native\build\poincare.exe only
 rem   build.bat icosahedral              native\build\icosahedral.exe only
-rem   build.bat poincare other.exe       native\build\other.exe (e.g. while poincare.exe is running)
+rem   build.bat pearcey                  native\build\pearcey.exe only
+rem   build.bat poincare other.exe      native\build\other.exe (e.g. while poincare.exe is running)
 rem
 rem All outputs (.exe, .lib, .exp, .obj) go to native\build, the parent folder's build folder.
 setlocal
 cd /d "%~dp0"
 set "TARGET=%~1"
 if "%TARGET%"=="" set "TARGET=all"
-if /i not "%TARGET%"=="all" if /i not "%TARGET%"=="poincare" if /i not "%TARGET%"=="icosahedral" (
-  echo Unknown target "%TARGET%". Use poincare, icosahedral, or no argument for both.
+if /i not "%TARGET%"=="all" if /i not "%TARGET%"=="poincare" if /i not "%TARGET%"=="icosahedral" if /i not "%TARGET%"=="pearcey" (
+  echo Unknown target "%TARGET%". Use poincare, icosahedral, pearcey, or no argument for all.
   exit /b 1
 )
 for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
@@ -26,6 +27,7 @@ if not exist "%OUT%" mkdir "%OUT%" || exit /b 1
 if /i "%TARGET%"=="all" (
   call :build poincare poincare.exe || exit /b 1
   call :build icosahedral icosahedral.exe || exit /b 1
+  call :build pearcey pearcey.exe || exit /b 1
   exit /b 0
 )
 set "OUTPUT=%~2"
