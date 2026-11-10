@@ -438,6 +438,14 @@ static int runApp(const Group& group, int argc, char** argv) {
                 return 1;
             }
             ++i;
+        } else if (option == "--function") {
+            double index = -1;
+            if (i + 1 >= argc || !readNumber(argv[i + 1], index) || (index != 0 && index != 1 && index != 2)) {
+                std::fprintf(stderr, "--function requires 0, 1 or 2\n");
+                return 1;
+            }
+            app.func = int(index);
+            ++i;
         } else if (option == "--snapshot") {
             if (i + 1 >= argc || argv[i + 1][0] == '\0' || std::string(argv[i + 1]).rfind("--", 0) == 0) {
                 std::fprintf(stderr, "--snapshot requires a file path\n");
@@ -469,6 +477,8 @@ static int runApp(const Group& group, int argc, char** argv) {
             std::printf("  --terms <count>         Number of group elements (default: %zu)\n", group.defaultTerms);
         if (group.sphere)
             std::printf("  --sphere                Start in the Riemann sphere view, centre facing the viewer\n");
+        std::printf("  --function <0|1|2>      Displayed function: %s, %s or %s (default: 0)\n",
+                    group.funcNames[0], group.funcNames[1], group.funcNames[2]);
         std::printf(
             "  --fp64                  Use double-precision summation\n"
             "  --snapshot <file.png>   Render, save, and exit\n"

@@ -37,19 +37,41 @@ See [docs/coxeter.md](docs/coxeter.md) for Coxeter and triangle groups, Klein's
 icosahedral invariants, and how this finite case relates to automorphic functions
 on other Riemann surfaces.
 
+## Pearcey integral
+
+The native renderer also plots the Pearcey integral, which describes the wave field
+near a cusp caustic:
+
+`Ψ(x, y) = ∫ exp(i(t⁴ + y t² + x t)) dt` over the real line, as a function of `z = x + iy`.
+
+![Phase portrait of the Pearcey integral with the cusp caustic](docs/pearcey.png)
+
+Run `native\build\pearcey.exe`. The default view is `|x| < 10`, `−15 < y < 5` on the
+shorter window side. Its Function choices are `Ψ`, `Ψ` with the caustic
+`27x² + 8y³ = 0` drawn in black, and `∂Ψ/∂x`. `Ψ` is not analytic in `z`, so its
+zeros (inside the cusp) are not all coloured the same way round.
+
+The integrand does not decay on the real line, so each pixel integrates along a path
+bent into the complex plane, `t(s) = s + iλ g/√(1 + g²)` with `g ∝ φ′(s)` and
+`φ = t⁴ + y t² + x t`, on which `|exp(iφ)| ≤ 1` and the integrand dies off away from
+the stationary points. The midpoint rule on this path converges exponentially; the
+"terms" are its nodes (default 512, enough for double precision in the default view;
+press `+` when zoomed far out). See the comments in `native/dx12/pearcey/pearcey.h`.
+
 ## Native Windows renderer
 
 Requires Visual Studio or Build Tools with the MSVC x64 C++ toolchain, the Windows SDK, and a DirectX 12 GPU with double-precision shader support (Windows 10/11).
 
-There are two programs, one per group:
+There are three programs:
 
-| Program | Group | Default center |
+| Program | Plot | Default center |
 |---|---|---|
 | `native\build\poincare.exe` | Kleinian ⟨g₁, g₂⟩, truncated Poincaré series | `0 -0.35` |
 | `native\build\icosahedral.exe` | 60 icosahedral rotations, exact sum | `0 0` |
+| `native\build\pearcey.exe` | Pearcey integral, quadrature per pixel | `0 -5` |
 
-Run `native\dx12\build.bat` to build both, or `native\dx12\build.bat poincare` /
-`native\dx12\build.bat icosahedral` to build one. All build outputs (`.exe`, `.lib`,
+Run `native\dx12\build.bat` to build all three, or `native\dx12\build.bat poincare` /
+`icosahedral` / `pearcey` to build one. All build outputs (`.exe`, `.lib`,
 `.exp`, `.obj`) go to `native\build\`.
 Group elements are enumerated on the CPU; HLSL compute shaders sum the series per pixel.
 DirectX 12 handles GPU buffers, domain coloring, and presentation. Both summation modes
@@ -65,19 +87,20 @@ Optionally set the initial view from the command line:
 .\native\build\poincare.exe --center 0.2 -0.6 --span 1.5 --terms 20000 --fp64 --snapshot zoom.png
 .\native\build\icosahedral.exe --snapshot icosahedral.png
 .\native\build\icosahedral.exe --sphere --center 1.5 0.8 --snapshot sphere.png
+.\native\build\pearcey.exe --function 1 --snapshot pearcey.png
 ```
 
 `--center <real> <imag>` sets the complex center.
 `--span <value>` sets the extent of the shorter window dimension in complex-plane
 units (default: `5`); it must be finite and positive. The other dimension follows
-the window aspect ratio. Both options are optional. `--terms` exists only for
-`poincare.exe`, and `--sphere` (start in the Riemann sphere view, with `--center`
+the window aspect ratio. Both options are optional. `--function <0|1|2>` picks the
+displayed function. `--terms` exists for `poincare.exe` and `pearcey.exe`, and `--sphere` (start in the Riemann sphere view, with `--center`
 facing the viewer) only for `icosahedral.exe`. Run either program with `--help` for all options.
 
-Controls (both programs):
+Controls (all programs):
 
 - Drag to pan; scroll to zoom.
-- `+` / `-`: double / halve the number of terms (`poincare.exe` only).
+- `+` / `-`: double / halve the number of terms (`poincare.exe` and `pearcey.exe`).
 - `D`: toggle fp32 / fp64 summation.
 - `M`: cycle plot styles; `F`: cycle displayed functions.
 - `[` / `]`: adjust contour density; `R`: reset the view.
@@ -92,6 +115,7 @@ To validate GPU sums against the CPU evaluator at three sample pixels:
 .\native\build\poincare.exe --terms 20000 --verify-gpu --snapshot check.png
 .\native\build\poincare.exe --terms 1024 --fp64 --verify-gpu --snapshot check-fp64.png
 .\native\build\icosahedral.exe --fp64 --verify-gpu --snapshot check-icosahedral.png
+.\native\build\pearcey.exe --fp64 --verify-gpu --snapshot check-pearcey.png
 ```
 
 ## Browser renderer
@@ -108,13 +132,16 @@ Use the on-screen controls to adjust the plot.
 - `native/dx12/icosahedral/`: the icosahedral program.
   - `icosahedral.h`: the 60 rotations, `F`, `h`, and Klein's `J` on the CPU.
   - `icosahedral.cpp`: the group's HLSL term and display value, and `main`.
-- `native/dx12/common/`: code shared by both programs.
+- `native/dx12/pearcey/`: the Pearcey integral program.
+  - `pearcey.h`: the integration path, quadrature nodes, and the CPU reference.
+  - `pearcey.cpp`: the HLSL integrand (with double-precision exp, sin and cos), the caustic overlay, and `main`.
+- `native/dx12/common/`: code shared by the programs.
   - `app.h`: Win32 window, controls, command line, progressive rendering, GPU checks.
   - `shaders.h`: shared HLSL frame (summation loop and domain coloring) around each group's functions.
   - `dx12.h`: DirectX 12 device, pipelines, resource management, and readback.
   - `mobius.h`: SL(2,C) matrices and Möbius transformations.
   - `png.h`: dependency-free PNG writer.
-- `native/dx12/build.bat`: builds one or both programs.
+- `native/dx12/build.bat`: builds one or all programs.
 - `native/metal/`: planned Metal implementation for Apple silicon Macs (not started).
 - `index.html`: browser implementation (WebGL2 shaders, UI, Kleinian group).
 - `complex.js`: complex numbers and Möbius matrices for the browser, shared by both groups.

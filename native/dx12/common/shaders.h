@@ -12,6 +12,9 @@
 //   #else
 //   double2 plotValue(double4 a, double2 z)
 //       Value to colour from the accumulated sums `a` at point z (uses uFunc).
+//   #define PLOT_OVERLAY 1             optional, with
+//   float3 plotOverlay(float3 col, double2 z)
+//       Final colour at z given the domain colouring `col`, e.g. to draw a curve.
 //   #endif
 
 #include <string>
@@ -166,6 +169,9 @@ float4 pixel(float4 position : SV_Position) : SV_Target {
     }
 #if FADE_POLES
     col*=1.0-smoothstep(14.0,24.0,abs(lm));
+#endif
+#ifdef PLOT_OVERLAY
+    col=plotOverlay(col,z);
 #endif
     if (uSphere!=0) col=lerp(float3(0.045,0.05,0.065),col*(0.55+0.45*front),cover);
     return float4(pow(abs(col),1.0/1.1),1);
