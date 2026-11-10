@@ -138,6 +138,8 @@ int main(int argc, char** argv) {
         512,              // quadrature nodes; --terms and +/-
         PEARCEY_HLSL,
         build, reference, value, invariance,
+        false,  // no sphere view
+        1,      // start with the GreenPinkTones phase colours
     };
     return runApp(group, argc, argv);
 }

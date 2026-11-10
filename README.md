@@ -51,6 +51,10 @@ shorter window side. Its Function choices are `Ψ`, `Ψ` with the caustic
 `27x² + 8y³ = 0` drawn in black, and `∂Ψ/∂x`. `Ψ` is not analytic in `z`, so its
 zeros (inside the cusp) are not all coloured the same way round.
 
+The phase is coloured with Mathematica's `ColorData["GreenPinkTones"]`: dark green at
+`arg = −π`, near white at 0, dark magenta at `+π`. The scheme is not cyclic, so it has a
+seam on the negative real axis. Press `C` for the hue wheel used by the other programs.
+
 The integrand does not decay on the real line, so each pixel integrates along a path
 bent into the complex plane, `t(s) = s + iλ g/√(1 + g²)` with `g ∝ φ′(s)` and
 `φ = t⁴ + y t² + x t`, on which `|exp(iφ)| ≤ 1` and the integrand dies off away from
@@ -103,6 +107,7 @@ Controls (all programs):
 - `+` / `-`: double / halve the number of terms (`poincare.exe` and `pearcey.exe`).
 - `D`: toggle fp32 / fp64 summation.
 - `M`: cycle plot styles; `F`: cycle displayed functions.
+- `C`: switch phase colours between the hue wheel and GreenPinkTones (the default in `pearcey.exe`).
 - `[` / `]`: adjust contour density; `R`: reset the view.
 - `S`: toggle complex plane / Riemann sphere (`icosahedral.exe` only). On the
   sphere, drag rotates and scroll zooms.

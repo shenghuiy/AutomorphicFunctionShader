@@ -24,7 +24,8 @@ struct ViewConstants {
     UINT sphere;          // 0: complex plane, 1: Riemann sphere
     double radius;        // sphere radius in pixels
     double rot[3][3];     // sphere rotation: images of the view x, y, z axes
-    double padding = 0;
+    UINT palette = 0;     // phase colours: 0 hue wheel, 1 GreenPinkTones
+    UINT padding = 0;
 };
 static_assert(sizeof(ViewConstants) == 144, "Must match the HLSL constant buffer");
 

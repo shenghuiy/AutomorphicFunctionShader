@@ -28,7 +28,9 @@ cbuffer View : register(b0) {
     float uDens;
     uint uSphere;
     double uRadius;
-    double2 uRot[5];  // 3x3 rotation, column-major: images of the view x, y, z axes
+    double2 uRot[4];  // 3x3 rotation, column-major: images of the view x, y, z axes;
+    double uRot8;     //   the ninth entry
+    uint uPalette;    // phase colours: 0 hue wheel, 1 GreenPinkTones
 };
 
 // Complex coordinate of pixel p (top-left origin); App::toZ in app.h mirrors it.
@@ -59,7 +61,7 @@ bool pixelZ(uint2 p, out double2 z, out float front, out float cover) {
     S = (S*S + D) / (S + S);
     S = (S*S + D) / (S + S);
     front = (float)(S / uRadius);
-    double3 X = double3(uRot[0].xy, uRot[1].x), Y = double3(uRot[1].y, uRot[2].xy), Z = double3(uRot[3].xy, uRot[4].x);
+    double3 X = double3(uRot[0].xy, uRot[1].x), Y = double3(uRot[1].y, uRot[2].xy), Z = double3(uRot[3].xy, uRot8);
     double3 V = o.x*X + o.y*Y + S*Z;  // sphere point times the radius
     // z = (X + iY) / (1 + Z) = V.xy / (R + V.z). Near the south pole R + V.z
     // cancels, so use the equal form V.xy (R - V.z) / (V.x^2 + V.y^2) there.
@@ -139,6 +141,27 @@ float3 hsv(float h) {
     float3 k=saturate(abs((frac((h*6.0+float3(0,4,2))/6.0)*6.0)-3.0)-1.0);
     return lerp(float3(1,1,1),k*k*(3.0-2.0*k),0.9);
 }
+// Mathematica's ColorData["GreenPinkTones"] at 0, 1/64, ..., 1: dark green,
+// light green, near white, pink, dark magenta.
+static const float3 GREEN_PINK[65] = {
+float3(0.000,0.242,0.023),float3(0.000,0.292,0.028),float3(0.000,0.342,0.033),float3(0.000,0.391,0.038),float3(0.000,0.441,0.042),float3(0.001,0.493,0.048),float3(0.003,0.547,0.054),float3(0.005,0.600,0.061),
+float3(0.007,0.653,0.067),float3(0.015,0.702,0.077),float3(0.031,0.745,0.092),float3(0.046,0.788,0.106),float3(0.061,0.831,0.121),float3(0.082,0.870,0.139),float3(0.123,0.889,0.171),float3(0.163,0.907,0.204),
+float3(0.204,0.926,0.236),float3(0.245,0.945,0.269),float3(0.296,0.952,0.315),float3(0.347,0.958,0.361),float3(0.398,0.964,0.408),float3(0.450,0.970,0.454),float3(0.502,0.973,0.505),float3(0.555,0.974,0.557),
+float3(0.609,0.975,0.609),float3(0.662,0.976,0.661),float3(0.711,0.975,0.710),float3(0.754,0.968,0.753),float3(0.797,0.961,0.796),float3(0.840,0.955,0.839),float3(0.880,0.946,0.879),float3(0.902,0.923,0.901),
+float3(0.924,0.901,0.923),float3(0.946,0.878,0.945),float3(0.968,0.855,0.967),float3(0.976,0.816,0.974),float3(0.982,0.775,0.980),float3(0.988,0.735,0.986),float3(0.994,0.694,0.991),float3(0.996,0.649,0.993),
+float3(0.995,0.600,0.992),float3(0.995,0.552,0.991),float3(0.995,0.504,0.990),float3(0.992,0.459,0.987),float3(0.986,0.419,0.981),float3(0.979,0.379,0.975),float3(0.973,0.339,0.968),float3(0.965,0.300,0.961),
+float3(0.943,0.278,0.940),float3(0.922,0.255,0.919),float3(0.900,0.232,0.898),float3(0.878,0.209,0.877),float3(0.838,0.194,0.837),float3(0.793,0.180,0.793),float3(0.748,0.166,0.748),float3(0.704,0.153,0.704),
+float3(0.654,0.140,0.654),float3(0.601,0.129,0.601),float3(0.548,0.117,0.547),float3(0.495,0.105,0.494),float3(0.443,0.094,0.441),float3(0.393,0.083,0.391),float3(0.343,0.073,0.341),float3(0.294,0.062,0.291),
+float3(0.244,0.051,0.241)};
+// Colour of the phase h = arg/2pi in [0, 1). GreenPinkTones is not cyclic, so
+// it runs from arg = -pi (dark green) through 0 (near white) to +pi (dark
+// magenta), with its seam on the negative real axis.
+float3 phaseColor(float h) {
+    if (uPalette==0) return hsv(h);
+    float t=frac(h+0.5)*64.0;
+    uint i=min((uint)t,63u);
+    return lerp(GREEN_PINK[i],GREEN_PINK[i+1],t-(float)i);
+}
 float saw(float x) { return lerp(frac(x),0.5,smoothstep(0.3,0.8,fwidth(x))); }
 float gridline(float x) {
     return 1.0-smoothstep(0.0,1.2,abs(frac(x-0.5)-0.5)/max(fwidth(x),1e-6));
@@ -159,7 +182,7 @@ float4 pixel(float4 position : SV_Position) : SV_Target {
     float lm=log2((float)s)+0.5*log2(dot(dir,dir));
     if (isinf((float)s)) lm=128.0;
     float h=frac(atan2(dir.y,dir.x)/(2.0*3.14159265358979));
-    float3 base=hsv(h), col;
+    float3 base=phaseColor(h), col;
     if (uMode==0) col=base*(0.55+0.45*sqrt(saw(lm*uDens)*saw(h*12.0*uDens)));
     else if (uMode==1) col=base;
     else if (uMode==2) col=base*(0.45+0.55*saw(lm*uDens));
