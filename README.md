@@ -62,7 +62,8 @@ the stationary points. The midpoint rule on this path converges exponentially; t
 "terms" are its nodes (default 512, enough for double precision in the default view;
 press `+` when zoomed far out). The node count is rounded up to a power of two, and
 the nodes are summed in bit-reversed order so that a frame drawn part-way through the
-sum, while dragging or resizing, is already a valid coarser quadrature. See the comments in `native/dx12/pearcey/pearcey.h`.
+sum, while dragging or resizing, is already a valid coarser quadrature. See [docs/pearcey/](docs/pearcey/README.md) for the integration path, the quadrature,
+the double-precision GPU functions, and how the results are verified.
 
 ## Native Windows renderer
 
@@ -155,3 +156,4 @@ Use the on-screen controls to adjust the plot.
 - `icosahedral.js`: icosahedral group, `F`, `h`, Klein's `J`, and their GLSL snippets for the browser.
 - `docs/background.md`: mathematical background.
 - `docs/coxeter.md`: Coxeter groups and the icosahedral automorphic function.
+- `docs/pearcey/`: the Pearcey integral: definition, integration path, quadrature, GPU evaluation, and verification.
