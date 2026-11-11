@@ -60,7 +60,9 @@ bent into the complex plane, `t(s) = s + iλ g/√(1 + g²)` with `g ∝ φ′(s
 `φ = t⁴ + y t² + x t`, on which `|exp(iφ)| ≤ 1` and the integrand dies off away from
 the stationary points. The midpoint rule on this path converges exponentially; the
 "terms" are its nodes (default 512, enough for double precision in the default view;
-press `+` when zoomed far out). See the comments in `native/dx12/pearcey/pearcey.h`.
+press `+` when zoomed far out). The node count is rounded up to a power of two, and
+the nodes are summed in bit-reversed order so that a frame drawn part-way through the
+sum, while dragging or resizing, is already a valid coarser quadrature. See the comments in `native/dx12/pearcey/pearcey.h`.
 
 ## Native Windows renderer
 

@@ -76,8 +76,10 @@ VEC4 term(VEC2 z, VEC2 node, uint index) {
 }
 #else
 // F key: Psi, Psi with the caustic drawn, dPsi/dx
+// While the sum is incomplete, the first uEnd of uCount nodes give uEnd/uCount
+// of the integral (pearcey::nodes), so scale it back up.
 double2 plotValue(double4 a, double2 z) {
-    return uFunc==2 ? a.zw : a.xy;
+    return (uFunc==2 ? a.zw : a.xy)*((double)uCount/(double)max(uEnd,1u));
 }
 // The caustic 27 x^2 + 8 y^3 = 0: the (x, y) where two real stationary points
 // of the phase merge. Drawn where |c| / |grad c|, the distance to the curve to
@@ -95,7 +97,9 @@ float3 plotOverlay(float3 col, double2 zd) {
 
 static size_t nodeCount = 0;
 
-static std::vector<Mat> build(size_t n) {
+static std::vector<Mat> build(size_t requested) {
+    size_t n = 1;
+    while (n < requested) n *= 2;  // pearcey::nodes needs a power of two
     nodeCount = n;
     std::printf("quadrature: %zu midpoint nodes per pixel on the deformed path\n", n);
     return pearcey::nodes(n);
@@ -140,6 +144,7 @@ int main(int argc, char** argv) {
         build, reference, value, invariance,
         false,  // no sphere view
         1,      // start with the GreenPinkTones phase colours
+        128,    // partial sums over 128, 256, ... nodes are valid coarser rules
     };
     return runApp(group, argc, argv);
 }
