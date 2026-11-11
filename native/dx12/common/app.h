@@ -78,6 +78,11 @@ struct Group {
     bool sphere = false;
     // Phase colours at start-up (C key): 0 hue wheel, 1 GreenPinkTones.
     int palette = 0;
+    // 0: any partial sum can be shown (a series that converges term by term).
+    // Otherwise the items are ordered so that the first m = minPartial, 2 minPartial,
+    // 4 minPartial, ... of them sum to m/count of the total, and only those
+    // partial sums are meaningful: the app stops at them and scales by count/m.
+    int minPartial = 0;
 };
 
 using Clock = std::chrono::steady_clock;
@@ -246,7 +251,8 @@ static void updateTitle() {
     if (std::isnan(z.real())) {
         std::snprintf(where, sizeof where, "off the sphere");
     } else {
-        cd val = app.group->value(cd(a[0], a[1]), cd(a[2], a[3]), app.func, z);
+        double k = app.group->minPartial && app.done ? double(app.count) / app.done : 1.0;
+        cd val = app.group->value(k * cd(a[0], a[1]), k * cd(a[2], a[3]), app.func, z);
         std::snprintf(where, sizeof where, "z = %.6f%+.6fi   %s(z) = %.6g%+.6gi", z.real(), z.imag(),
                       app.group->funcNames[app.func], val.real(), val.imag());
     }
@@ -299,6 +305,7 @@ static ViewConstants viewConstants(int start, int end) {
                        UINT(app.mode), UINT(app.func), app.dens, UINT(app.sphere), app.radius()};
     std::memcpy(v.rot, app.rot, sizeof v.rot);
     v.palette = UINT(app.palette);
+    v.count = UINT(app.count);
     return v;
 }
 
@@ -306,7 +313,9 @@ static void frame() {
     if (app.done < app.count) {
         auto t0 = Clock::now();
         while (app.done < app.count && msSince(t0) < 30.0) {
-            int end = int(std::min<int64_t>(app.count, int64_t(app.done) + app.chunk));
+            int64_t step = app.chunk;
+            if (int m = app.group->minPartial) step = app.done ? app.done : m;  // stop at m, 2m, 4m, ...
+            int end = int(std::min<int64_t>(app.count, int64_t(app.done) + step));
             auto td = Clock::now();
             renderer.compute(viewConstants(app.done, end), app.fp64);
             double dt = msSince(td);
@@ -351,7 +360,12 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     const bool variableTerms = app.group->defaultTerms > 0;
     switch (msg) {
     case WM_SIZE:
-        if (renderer.ready()) resize(LOWORD(lp), HIWORD(lp));
+        // While the user drags the window border, Windows runs its own message
+        // loop and the main loop below draws nothing, so draw from here.
+        if (renderer.ready() && wp != SIZE_MINIMIZED) {
+            resize(LOWORD(lp), HIWORD(lp));
+            if (app.count > 0) frame();
+        }
         return 0;
     case WM_LBUTTONDOWN:
         app.dragging = true;

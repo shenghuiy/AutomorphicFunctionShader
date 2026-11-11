@@ -39,10 +39,20 @@ inline double halfWidth(double x, double y) {
 
 // Midpoint nodes u_j in (-1, 1) and weights, uploaded as the d entry of a
 // matrix [[1, 0], [0, u + i w]], so the shader sees w1 = z and w2 = (u, w).
+//
+// n must be a power of two. The nodes are in bit-reversed order, so the first
+// m = 2^k of them are every (n/m)-th node: an evenly spaced rule of its own.
+// A partial sum over m nodes is then m/n times a coarser but valid estimate of
+// the integral, and a frame drawn before the sum is complete shows the right picture.
 inline std::vector<Mat> nodes(size_t n) {
     std::vector<Mat> out;
     out.reserve(n);
-    for (size_t j = 0; j < n; j++) out.push_back({1, 0, 0, cd(-1 + (2.0 * j + 1) / n, 2.0 / n)});
+    for (size_t i = 0; i < n; i++) {
+        size_t j = 0;
+        for (size_t bit = 1, rev = n >> 1; bit < n; bit <<= 1, rev >>= 1)
+            if (i & bit) j |= rev;
+        out.push_back({1, 0, 0, cd(-1 + (2.0 * j + 1) / n, 2.0 / n)});
+    }
     return out;
 }
 

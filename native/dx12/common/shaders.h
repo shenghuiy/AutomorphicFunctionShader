@@ -31,6 +31,7 @@ cbuffer View : register(b0) {
     double2 uRot[4];  // 3x3 rotation, column-major: images of the view x, y, z axes;
     double uRot8;     //   the ninth entry
     uint uPalette;    // phase colours: 0 hue wheel, 1 GreenPinkTones
+    uint uCount;      // total number of summed items; when drawing, uEnd of them are done
 };
 
 // Complex coordinate of pixel p (top-left origin); App::toZ in app.h mirrors it.

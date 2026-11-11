@@ -25,7 +25,7 @@ struct ViewConstants {
     double radius;        // sphere radius in pixels
     double rot[3][3];     // sphere rotation: images of the view x, y, z axes
     UINT palette = 0;     // phase colours: 0 hue wheel, 1 GreenPinkTones
-    UINT padding = 0;
+    UINT count = 0;       // total number of summed items (uEnd of them are done when drawing)
 };
 static_assert(sizeof(ViewConstants) == 144, "Must match the HLSL constant buffer");
 
