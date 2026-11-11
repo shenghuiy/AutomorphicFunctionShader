@@ -51,9 +51,10 @@ shorter window side. Its Function choices are `Ψ`, `Ψ` with the caustic
 `27x² + 8y³ = 0` drawn in black, and `∂Ψ/∂x`. `Ψ` is not analytic in `z`, so its
 zeros (inside the cusp) are not all coloured the same way round.
 
-The phase is coloured with Mathematica's `ColorData["GreenPinkTones"]`: dark green at
-`arg = −π`, near white at 0, dark magenta at `+π`. The scheme is not cyclic, so it has a
-seam on the negative real axis. Press `C` for the hue wheel used by the other programs.
+The phase is coloured with the hue wheel, as in the other programs. Press `C` (or pass
+`--colors greenpink`) for Mathematica's `ColorData["GreenPinkTones"]`: dark green at
+`arg = −π`, near white at 0, dark magenta at `+π`. That scheme is not cyclic, so it has a
+seam on the negative real axis.
 
 The integrand does not decay on the real line, so each pixel integrates along a path
 bent into the complex plane, `t(s) = s + iλ g/√(1 + g²)` with `g ∝ φ′(s)` and

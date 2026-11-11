@@ -201,10 +201,10 @@ The pixel shader reads `acc` and calls `plotValue`. That returns $`\Psi`$ or
 $`\partial\Psi/\partial x`$, scaled up for a partial sum
 ([quadrature.md](quadrature.md#bit-reversed-node-order-and-progressive-rendering)).
 The shared domain colouring in `shaders.h` then maps the phase to a colour and
-draws the modulus contours. `pearcey.exe` starts with
-Mathematica's `GreenPinkTones` palette (`palette = 1` in `main`). It runs from dark
-green at $`\arg = -\pi`$ through near white at 0 to dark magenta at $`+\pi`$. It is not
-cyclic, so it has a seam on the negative real axis. `C` switches to the hue wheel.
+draws the modulus contours. Like the other programs, `pearcey.exe` starts with the
+hue wheel. `C` (or `--colors greenpink`) switches to Mathematica's `GreenPinkTones`.
+That palette runs from dark green at $`\arg = -\pi`$ through near white at 0 to dark
+magenta at $`+\pi`$. It is not cyclic, so it has a seam on the negative real axis.
 
 ## The caustic overlay
 
