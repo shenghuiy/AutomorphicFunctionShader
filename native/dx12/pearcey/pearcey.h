@@ -8,10 +8,12 @@
 //     t(s) = s + i delta(s),   delta(s) = LAMBDA g / sqrt(1 + g^2),   g = phi'(s) / kappa,
 // for real s. To first order Im phi(t(s)) = delta(s) phi'(s) >= 0, so
 // |exp(i phi)| <= 1 and it decays like exp(-LAMBDA |phi'(s)|) away from the
-// stationary points of phi. Exactly, Im phi = delta (phi' - 4 s delta^2), which
-// is non-negative for |s| <= S once kappa >= 4 S LAMBDA^2. kappa is 4 times
-// that: a gentler bend keeps the square root's branch points away from the real
-// axis, and the midpoint rule then needs about half as many nodes. Nothing
+// stationary points of phi. Exactly, Im phi = delta (phi' - 4 s delta^2)
+// = (LAMBDA g^2 / q^3) (kappa (1 + g^2) - 4 LAMBDA^2 s g) with q = sqrt(1 + g^2),
+// which is non-negative for all g iff kappa >= 2 LAMBDA^2 |s|, so on |s| <= S
+// once kappa >= 2 S LAMBDA^2. kappa is 8 times that: a gentler bend keeps the
+// square root's branch points away from the real axis, and the midpoint rule
+// then needs about half as many nodes as with kappa = 4 S LAMBDA^2. Nothing
 // large is cancelled, so single precision is already usable.
 //
 // The integrand is analytic in s, so the midpoint rule on [-S, S] converges

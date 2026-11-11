@@ -91,15 +91,16 @@ With $`q = \sqrt{1+g^2}`$ this is
 
 The bracket, a quadratic in $`g`$, is non-negative for all $`g`$ if and only if
 $`\kappa \ge 2\lambda^2\lvert s\rvert`$. On the integration interval $`\lvert s\rvert \le S`$
-it is therefore enough that $`\kappa \ge 2S\lambda^2`$. The comment in `pearcey.h`
-uses the simpler sufficient bound $`\kappa \ge 4S\lambda^2`$, and the code takes
-$`\kappa`$ four times that:
+it is therefore enough that $`\kappa \ge 2S\lambda^2`$. The code takes $`\kappa`$
+eight times that:
 
 ```cpp
-// Exactly, Im phi = delta (phi' - 4 s delta^2), which
-// is non-negative for |s| <= S once kappa >= 4 S LAMBDA^2. kappa is 4 times
-// that: a gentler bend keeps the square root's branch points away from the real
-// axis, and the midpoint rule then needs about half as many nodes.
+// Exactly, Im phi = delta (phi' - 4 s delta^2)
+// = (LAMBDA g^2 / q^3) (kappa (1 + g^2) - 4 LAMBDA^2 s g) with q = sqrt(1 + g^2),
+// which is non-negative for all g iff kappa >= 2 LAMBDA^2 |s|, so on |s| <= S
+// once kappa >= 2 S LAMBDA^2. kappa is 8 times that: a gentler bend keeps the
+// square root's branch points away from the real axis, and the midpoint rule
+// then needs about half as many nodes as with kappa = 4 S LAMBDA^2.
 double S = halfWidth(x, y), kappa = 16 * S * LAMBDA * LAMBDA;
 ```
 
@@ -116,7 +117,7 @@ converges ([quadrature.md](quadrature.md#why-it-converges-exponentially)): the f
 they are from the real $`s`$-axis, the faster. A larger $`\kappa`$ moves them
 farther out. The bend becomes gentler, so the decay starts a little later, but
 the integrand becomes smoother. With $`\kappa = 16 S\lambda^2`$, the midpoint rule
-needs about half as many nodes as at the minimum.
+needs about half as many nodes as with $`\kappa = 4S\lambda^2`$.
 
 ### The Jacobian
 
