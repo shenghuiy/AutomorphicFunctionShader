@@ -76,8 +76,6 @@ struct Group {
     void (*invariance)();
     // Offer the Riemann sphere view (S key, --sphere).
     bool sphere = false;
-    // Phase colours at start-up (C key): 0 hue wheel, 1 GreenPinkTones.
-    int palette = 0;
     // 0: any partial sum can be shown (a series that converges term by term).
     // Otherwise the items are ordered so that the first m = minPartial, 2 minPartial,
     // 4 minPartial, ... of them sum to m/count of the total, and only those
@@ -426,7 +424,6 @@ static int runApp(const Group& group, int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     app.group = &group;
     app.N = group.defaultTerms;
-    app.palette = group.palette;
     resetView();
     const bool variableTerms = group.defaultTerms > 0;
     auto readNumber = [](const char* text, double& value) {
@@ -444,6 +441,15 @@ static int runApp(const Group& group, int argc, char** argv) {
             app.fp64 = true;
         } else if (option == "--sphere" && group.sphere) {
             app.sphere = true;
+        } else if (option == "--colors") {
+            const std::string name = i + 1 < argc ? argv[i + 1] : "";
+            if (name == "hue") app.palette = 0;
+            else if (name == "greenpink") app.palette = 1;
+            else {
+                std::fprintf(stderr, "--colors requires hue or greenpink\n");
+                return 1;
+            }
+            ++i;
         } else if (option == "--verify-gpu") {
             verifyGPU = true;
         } else if (option == "--center") {
@@ -500,6 +506,7 @@ static int runApp(const Group& group, int argc, char** argv) {
         std::printf("  --function <0|1|2>      Displayed function: %s, %s or %s (default: 0)\n",
                     group.funcNames[0], group.funcNames[1], group.funcNames[2]);
         std::printf(
+            "  --colors <hue|greenpink> Phase colours: hue wheel or GreenPinkTones (default: hue)\n"
             "  --fp64                  Use double-precision summation\n"
             "  --snapshot <file.png>   Render, save, and exit\n"
             "  --verify-gpu            Check GPU sums against CPU when saving a snapshot\n"

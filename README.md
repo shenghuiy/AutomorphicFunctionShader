@@ -101,7 +101,8 @@ Optionally set the initial view from the command line:
 `--span <value>` sets the extent of the shorter window dimension in complex-plane
 units (default: `5`); it must be finite and positive. The other dimension follows
 the window aspect ratio. Both options are optional. `--function <0|1|2>` picks the
-displayed function. `--terms` exists for `poincare.exe` and `pearcey.exe`, and `--sphere` (start in the Riemann sphere view, with `--center`
+displayed function. `--colors <hue|greenpink>` picks the phase colours (all programs
+default to the hue wheel). `--terms` exists for `poincare.exe` and `pearcey.exe`, and `--sphere` (start in the Riemann sphere view, with `--center`
 facing the viewer) only for `icosahedral.exe`. Run either program with `--help` for all options.
 
 Controls (all programs):
@@ -110,7 +111,7 @@ Controls (all programs):
 - `+` / `-`: double / halve the number of terms (`poincare.exe` and `pearcey.exe`).
 - `D`: toggle fp32 / fp64 summation.
 - `M`: cycle plot styles; `F`: cycle displayed functions.
-- `C`: switch phase colours between the hue wheel and GreenPinkTones (the default in `pearcey.exe`).
+- `C`: switch phase colours between the hue wheel (default) and GreenPinkTones.
 - `[` / `]`: adjust contour density; `R`: reset the view.
 - `S`: toggle complex plane / Riemann sphere (`icosahedral.exe` only). On the
   sphere, drag rotates and scroll zooms.

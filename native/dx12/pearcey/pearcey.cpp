@@ -146,7 +146,6 @@ int main(int argc, char** argv) {
         PEARCEY_HLSL,
         build, reference, value, invariance,
         false,  // no sphere view
-        1,      // start with the GreenPinkTones phase colours
         128,    // partial sums over 128, 256, ... nodes are valid coarser rules
     };
     return runApp(group, argc, argv);
