@@ -125,6 +125,9 @@ static void invariance() {
         if (xy[1] >= -4) std::printf("   vs rotated path: rel.err %.1e", err(p[0], pearcey::psiRotated(xy[0], xy[1])));
         pearcey::psi(xy[0], xy[1], 20000, q);
         std::printf("   vs 20000 nodes: rel.err %.1e", err(p[0], q[0]));
+        // Consistency check only: for -x the path is the mirror image t -> -t and the
+        // nodes are symmetric, so this sums the same terms in reverse order and
+        // agrees to rounding error by construction.
         pearcey::psi(-xy[0], xy[1], nodeCount, q);
         std::printf("   Psi(-x,y) = Psi(x,y): rel.err %.1e\n", err(q[0], p[0]));
     }

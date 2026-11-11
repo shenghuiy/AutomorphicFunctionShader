@@ -51,9 +51,10 @@ shorter window side. Its Function choices are `Ψ`, `Ψ` with the caustic
 `27x² + 8y³ = 0` drawn in black, and `∂Ψ/∂x`. `Ψ` is not analytic in `z`, so its
 zeros (inside the cusp) are not all coloured the same way round.
 
-The phase is coloured with Mathematica's `ColorData["GreenPinkTones"]`: dark green at
-`arg = −π`, near white at 0, dark magenta at `+π`. The scheme is not cyclic, so it has a
-seam on the negative real axis. Press `C` for the hue wheel used by the other programs.
+The phase is coloured with the hue wheel, as in the other programs. Press `C` (or pass
+`--colors greenpink`) for Mathematica's `ColorData["GreenPinkTones"]`: dark green at
+`arg = −π`, near white at 0, dark magenta at `+π`. That scheme is not cyclic, so it has a
+seam on the negative real axis.
 
 The integrand does not decay on the real line, so each pixel integrates along a path
 bent into the complex plane, `t(s) = s + iλ g/√(1 + g²)` with `g ∝ φ′(s)` and
@@ -62,7 +63,8 @@ the stationary points. The midpoint rule on this path converges exponentially; t
 "terms" are its nodes (default 512, enough for double precision in the default view;
 press `+` when zoomed far out). The node count is rounded up to a power of two, and
 the nodes are summed in bit-reversed order so that a frame drawn part-way through the
-sum, while dragging or resizing, is already a valid coarser quadrature. See the comments in `native/dx12/pearcey/pearcey.h`.
+sum, while dragging or resizing, is already a valid coarser quadrature. See [docs/pearcey/](docs/pearcey/README.md) for the integration path, the quadrature,
+the double-precision GPU functions, and how the results are verified.
 
 ## Native Windows renderer
 
@@ -156,3 +158,4 @@ Use the on-screen controls to adjust the plot.
 - `icosahedral.js`: icosahedral group, `F`, `h`, Klein's `J`, and their GLSL snippets for the browser.
 - `docs/background.md`: mathematical background.
 - `docs/coxeter.md`: Coxeter groups and the icosahedral automorphic function.
+- `docs/pearcey/`: the Pearcey integral: definition, integration path, quadrature, GPU evaluation, and verification.
