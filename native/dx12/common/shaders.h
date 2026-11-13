@@ -15,6 +15,9 @@
 //   #define PLOT_OVERLAY 1             optional, with
 //   float3 plotOverlay(float3 col, double2 z)
 //       Final colour at z given the domain colouring `col`, e.g. to draw a curve.
+//   #define PLOT_CUSTOM_COLOR 1        optional, with
+//   bool plotCustomColor(double2 z, out float3 col)
+//       Return true to bypass phase colouring, e.g. for categorical basins.
 //   #endif
 
 #include <string>
@@ -175,6 +178,10 @@ float4 pixel(float4 position : SV_Position) : SV_Target {
     // Off the sphere acc is not written; colour a constant instead (no early
     // return, so neighbouring on-sphere lanes keep valid derivatives).
     bool on=pixelZ(p,z,front,cover);
+#ifdef PLOT_CUSTOM_COLOR
+    float3 custom;
+    if (on && plotCustomColor(z,custom)) return float4(custom,1);
+#endif
     double2 fd=on ? plotValue(acc[p.y*uW+p.x],z) : double2(1,0);
     double s=max(abs(fd.x),abs(fd.y));
     if (!(s>0.0L)) return float4(0,0,0,1);
