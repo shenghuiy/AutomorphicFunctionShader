@@ -4,7 +4,7 @@ Interactive domain coloring of the automorphic function
 `f(z) = P_{-1,-3}(z) / P_{0,-4}(z)` for a two-generator Kleinian group.
 Both renderers approximate the Poincaré series with a finite number of group elements.
 
-![Domain coloring of the automorphic function rendered with 20,000 group elements](docs/poincare.png)
+![Domain coloring of the automorphic function rendered with 20,000 group elements](docs/img/poincare.png)
 
 DirectX 12 renderer preview using 20,000 terms at 1400 × 1000 pixels.
 
@@ -31,7 +31,7 @@ projection from the south pole, `z = (X + iY)/(1 + Z)`, so 0 is the north pole a
 mirroring it. Switching views keeps the point at the centre of the window. On the
 sphere, drag rotates it and the scroll wheel zooms.
 
-![Phase portrait of the icosahedral automorphic function](docs/icosahedral.png)
+![Phase portrait of the icosahedral automorphic function](docs/img/icosahedral.png)
 
 See [docs/coxeter.md](docs/coxeter.md) for Coxeter and triangle groups, Klein's
 icosahedral invariants, and how this finite case relates to automorphic functions
@@ -44,7 +44,7 @@ near a cusp caustic:
 
 `Ψ(x, y) = ∫ exp(i(t⁴ + y t² + x t)) dt` over the real line, as a function of `z = x + iy`.
 
-![Phase portrait of the Pearcey integral with the cusp caustic](docs/pearcey.png)
+![Phase portrait of the Pearcey integral with the cusp caustic](docs/img/pearcey.png)
 
 Run `native\build\pearcey.exe`. The default view is `|x| < 10`, `−15 < y < 5` on the
 shorter window side. Its Function choices are `Ψ`, `Ψ` with the caustic
@@ -73,7 +73,7 @@ Run `native\build\kantorovich.exe --fp64` to explore
 Press **F** to cycle its phase portrait, Newton displacement `N(z)-z`, and the
 attraction basins of its ten roots. Drag to pan and scroll to zoom.
 
-![Newton attraction basins](docs/kantorovich-basins.png)
+![Newton attraction basins](docs/img/kantorovich-basins.png)
 
 See [docs/kantorovich.md](docs/kantorovich.md) for a step-by-step explanation,
 the shader formulas, color meanings, numerical limits and validation commands.

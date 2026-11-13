@@ -9,7 +9,7 @@ The formulas match `group`, `F`, `h` and `kleinJ` in `icosahedral.js` (browser)
 and in the `icosahedral` namespace of `native/dx12/icosahedral/icosahedral.h` (native renderer).
 Each file also holds the shader snippets that the renderer splices into its GPU code.
 
-![Phase portrait of F on |Re z|, |Im z| < 2.5](icosahedral.png)
+![Phase portrait of F on |Re z|, |Im z| < 2.5](img/icosahedral.png)
 
 ## Coxeter groups
 
