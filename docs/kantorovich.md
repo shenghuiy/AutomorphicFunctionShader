@@ -75,20 +75,20 @@ what the local Newton step needs.
 
 ## 4. Read the three GPU views
 
-![Function phase portrait](kantorovich.png)
+![Function phase portrait](img/kantorovich.png)
 
 **F mode 0: f.** Hue is arg f(z), the direction of the output complex number.
 The default contour bands show magnitude and phase. Regions with J<0 are darker;
 the thin dark boundary approximates J=0. Both zeros and poles produce color-wheel
 patterns, so hue alone cannot distinguish them. Press M for plain phase coloring.
 
-![Newton displacement](kantorovich-step.png)
+![Newton displacement](img/kantorovich-step.png)
 
 **F mode 1: N(z)-z.** Hue is the direction of the next Newton step; magnitude
 bands encode step size. Across J=0 the denominator changes sign and the phase
 can jump by pi. Orientation shading still refers to f, not the displacement map.
 
-![Newton attraction basins](kantorovich-basins.png)
+![Newton attraction basins](img/kantorovich-basins.png)
 
 **F mode 2: basins.** Each pixel starts a Newton orbit. The same base color means
 the same limiting root; darker shades mean more iterations. Complicated boundaries
@@ -116,9 +116,9 @@ From the repository root:
 ```powershell
 .\native\dx12\build.bat kantorovich
 .\native\build\kantorovich.exe --fp64
-.\native\build\kantorovich.exe --function 2 --snapshot docs/kantorovich-basins.png
+.\native\build\kantorovich.exe --function 2 --snapshot docs/img/kantorovich-basins.png
 .\native\build\kantorovich.exe --self-test
-.\native\build\kantorovich.exe --fp64 --verify-gpu --snapshot docs/kantorovich.png
+.\native\build\kantorovich.exe --fp64 --verify-gpu --snapshot docs/img/kantorovich.png
 ```
 
 F cycles the views, drag pans, wheel zooms, R resets, P saves a PNG, Esc closes.
