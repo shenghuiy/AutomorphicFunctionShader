@@ -66,20 +66,36 @@ the nodes are summed in bit-reversed order so that a frame drawn part-way throug
 sum, while dragging or resizing, is already a valid coarser quadrature. See [docs/pearcey/](docs/pearcey/README.md) for the integration path, the quadrature,
 the double-precision GPU functions, and how the results are verified.
 
+## Kantorovich theorem and harmonic Newton iteration
+
+Run `native\build\kantorovich.exe --fp64` to explore
+`f(z) = z - conjugate(z²/(z³ - 0.6³))` from the Kantorovich illustration.
+Press **F** to cycle its phase portrait, Newton displacement `N(z)-z`, and the
+attraction basins of its ten roots. Drag to pan and scroll to zoom.
+
+![Newton attraction basins](docs/kantorovich-basins.png)
+
+See [docs/kantorovich.md](docs/kantorovich.md) for a step-by-step explanation,
+the shader formulas, color meanings, numerical limits and validation commands.
+Build with `native\dx12\build.bat kantorovich`; source and embedded HLSL are in
+`native/dx12/kantorovich/kantorovich.cpp`, using the existing shared renderer.
+The default center is `0 0` and span is `3`.
+
 ## Native Windows renderer
 
 Requires Visual Studio or Build Tools with the MSVC x64 C++ toolchain, the Windows SDK, and a DirectX 12 GPU with double-precision shader support (Windows 10/11).
 
-There are three programs:
+There are four programs:
 
 | Program | Plot | Default center |
 |---|---|---|
 | `native\build\poincare.exe` | Kleinian ⟨g₁, g₂⟩, truncated Poincaré series | `0 -0.35` |
 | `native\build\icosahedral.exe` | 60 icosahedral rotations, exact sum | `0 0` |
 | `native\build\pearcey.exe` | Pearcey integral, quadrature per pixel | `0 -5` |
+| `native\build\kantorovich.exe` | Harmonic function and Newton basins | `0 0` |
 
-Run `native\dx12\build.bat` to build all three, or `native\dx12\build.bat poincare` /
-`icosahedral` / `pearcey` to build one. All build outputs (`.exe`, `.lib`,
+Run `native\dx12\build.bat` to build all four, or `native\dx12\build.bat poincare` /
+`icosahedral` / `pearcey` / `kantorovich` to build one. All build outputs (`.exe`, `.lib`,
 `.exp`, `.obj`) go to `native\build\`.
 Group elements are enumerated on the CPU; HLSL compute shaders sum the series per pixel.
 DirectX 12 handles GPU buffers, domain coloring, and presentation. Both summation modes
