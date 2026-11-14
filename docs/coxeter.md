@@ -5,7 +5,7 @@ function for the rotation group of the icosahedron. Switch to it with the
 **Group** menu in `index.html`, or run the native program
 `native\build\icosahedral.exe`. It also places that example in the wider theory of
 Coxeter groups, triangle groups and automorphic functions on Riemann surfaces.
-The formulas match `group`, `F`, `h` and `kleinJ` in `icosahedral.js` (browser)
+The formulas match `group`, `F`, `h` and `kleinJ` in `js/icosahedral.js` (browser)
 and in the `icosahedral` namespace of `native/dx12/icosahedral/icosahedral.h` (native renderer).
 Each file also holds the shader snippets that the renderer splices into its GPU code.
 

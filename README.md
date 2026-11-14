@@ -156,7 +156,7 @@ double-float arithmetic (about 48 significant bits), which passes the same
 ## Browser renderer
 
 Open `index.html` in a browser supporting WebGL2 and the `EXT_color_buffer_float` extension.
-Keep `complex.js` and `icosahedral.js` in the same folder; the page loads them.
+Keep the `js/` folder next to `index.html`; the page loads `js/complex.js` and `js/icosahedral.js`.
 Use the on-screen controls to adjust the plot.
 
 ## Source files
@@ -179,8 +179,8 @@ Use the on-screen controls to adjust the plot.
 - `native/dx12/build.bat`: builds one or all programs.
 - `native/metal/`: Metal versions of the four programs for macOS; see [native/metal/README.md](native/metal/README.md).
 - `index.html`: browser implementation (WebGL2 shaders, UI, Kleinian group).
-- `complex.js`: complex numbers and Möbius matrices for the browser, shared by both groups.
-- `icosahedral.js`: icosahedral group, `F`, `h`, Klein's `J`, and their GLSL snippets for the browser.
+- `js/complex.js`: complex numbers and Möbius matrices for the browser, shared by both groups.
+- `js/icosahedral.js`: icosahedral group, `F`, `h`, Klein's `J`, and their GLSL snippets for the browser.
 - `docs/background.md`: mathematical background.
 - `docs/coxeter.md`: Coxeter groups and the icosahedral automorphic function.
 - `docs/pearcey/`: the Pearcey integral: definition, integration path, quadrature, GPU evaluation, and verification.
