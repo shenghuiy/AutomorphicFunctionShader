@@ -21,7 +21,7 @@
 //   Esc             quit
 
 #import <Cocoa/Cocoa.h>
-#import <MetalKit/MetalKit.h>
+#import <QuartzCore/CAMetalLayer.h>
 
 #include <unistd.h>
 
@@ -84,7 +84,8 @@ static double msSince(Clock::time_point t) { return std::chrono::duration<double
 struct App {
     const Group* group = nullptr;
     NSWindow* window = nil;
-    MTKView* view = nil;
+    NSView* view = nil;
+    CAMetalLayer* layer = nil;  // the view's backing layer; frame() sizes its drawables
     int W = 0, H = 0;
     double cx = 0.0, cy = 0.0, span = 5.0;  // span = width of the shorter screen side in z-units
     // Riemann sphere view: rot[j] is the world-space image of view axis j
@@ -318,7 +319,14 @@ static ViewConstants viewConstants(int start, int end) {
 
 // One frame: sum more terms for up to ~30 ms, then redraw if anything changed.
 static void frame() {
-    CGSize size = app.view.drawableSize;
+    // Size the drawables to the view in pixels. CAMetalLayer does not follow its
+    // view's size on its own: a stale drawableSize gives drawables of the old size,
+    // which frame() cannot draw into, and the window would freeze after a resize.
+    CGSize size = [app.view convertRectToBacking:app.view.bounds].size;
+    if (size.width >= 1 && size.height >= 1 && !CGSizeEqualToSize(size, app.layer.drawableSize)) {
+        app.layer.contentsScale = app.window.backingScaleFactor;
+        app.layer.drawableSize = size;
+    }
     resize(int(size.width), int(size.height));
     if (app.W <= 0 || app.H <= 0 || app.count == 0) return;
     if (app.done < app.count) {
@@ -344,7 +352,7 @@ static void frame() {
     bool snapshotNow = !snapshotPath.empty() && app.done >= app.count;
     bool capture = app.saveRequested || snapshotNow;
     if (app.dirty || capture) {
-        id<CAMetalDrawable> drawable = [(CAMetalLayer*)app.view.layer nextDrawable];
+        id<CAMetalDrawable> drawable = [app.layer nextDrawable];
         if (drawable && drawable.texture.width == size_t(app.W) && drawable.texture.height == size_t(app.H)) {
             renderer.draw(viewConstants(0, app.done), app.fp64, drawable, capture);
             app.dirty = false;
@@ -396,16 +404,18 @@ static void keyPressed(unichar key) {
 }
 
 // The Metal view: forwards input to the app and draws a frame per display refresh.
-@interface PlotView : MTKView <MTKViewDelegate>
+@interface PlotView : NSView
 @end
 
 @implementation PlotView
+- (BOOL)wantsUpdateLayer { return YES; }
+- (CALayer*)makeBackingLayer { return [CAMetalLayer layer]; }
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)acceptsFirstMouse:(NSEvent*)event { return YES; }
 // Cursor position in drawable pixels, top-left origin.
 - (void)pixelOf:(NSEvent*)event x:(int*)x y:(int*)y {
     NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
-    NSSize b = self.bounds.size, d = self.drawableSize;
+    NSSize b = self.bounds.size, d = app.layer.drawableSize;
     *x = int(std::floor(p.x * d.width / std::max(1.0, b.width)));
     *y = int(std::floor((b.height - p.y) * d.height / std::max(1.0, b.height)));
 }
@@ -447,10 +457,6 @@ static void keyPressed(unichar key) {
     NSString* chars = event.characters;
     if (chars.length > 0) keyPressed([chars characterAtIndex:0]);
 }
-- (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size {
-    resize(int(size.width), int(size.height));
-}
-- (void)drawInMTKView:(MTKView*)view { frame(); }
 @end
 
 @interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate>
@@ -596,30 +602,32 @@ static int runApp(const Group& group, int argc, char** argv) {
         app.window.title = [NSString stringWithUTF8String:group.title];
         [app.window center];
 
-        PlotView* view = [[PlotView alloc] initWithFrame:frameRect device:device];
+        PlotView* view = [[PlotView alloc] initWithFrame:frameRect];
+        view.wantsLayer = YES;
         app.view = view;
-        view.delegate = view;
-        view.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
-        view.framebufferOnly = NO;  // P and --snapshot read the drawable back
-        view.preferredFramesPerSecond = 60;
-        view.paused = YES;  // frame() draws only when something changed; see the timer below
-        view.enableSetNeedsDisplay = NO;
-        ((CAMetalLayer*)view.layer).colorspace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        app.layer = (CAMetalLayer*)view.layer;
+        app.layer.device = device;
+        app.layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        app.layer.framebufferOnly = NO;  // P and --snapshot read the drawable back
+        CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        app.layer.colorspace = srgb;
+        CGColorSpaceRelease(srgb);
         app.window.contentView = view;
         [app.window makeFirstResponder:view];  // keys and mouse-moved events go to the first responder
 
         std::string sources[2] = {shaderSource(group.msl, false), shaderSource(group.msl, true)};
-        app.gpu = renderer.initialize(device, view.colorPixelFormat, sources);
+        app.gpu = renderer.initialize(device, app.layer.pixelFormat, sources);
         std::printf("Metal\nGPU    %s\n\n", app.gpu.c_str());
-        CGSize size = view.drawableSize;
-        resize(int(size.width), int(size.height));
-        buildGroup();
+        buildGroup();  // frame() sizes the drawables and the accumulator
 
         [app.window makeKeyAndOrderFront:nil];
         [NSApp activateIgnoringOtherApps:YES];
         // Drive frames from a timer in the common run-loop modes, so the plot keeps
         // rendering while the window is being resized or a menu is open.
-        NSTimer* timer = [NSTimer timerWithTimeInterval:1.0 / 60.0 repeats:YES block:^(NSTimer*) { frame(); }];
+        NSTimer* timer = [NSTimer timerWithTimeInterval:1.0 / 60.0 repeats:YES block:^(NSTimer*) {
+            // Release each frame's drawable promptly; holding them stalls nextDrawable.
+            @autoreleasepool { frame(); }
+        }];
         [NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];
         [NSApp run];
     }

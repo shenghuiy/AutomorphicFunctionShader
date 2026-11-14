@@ -19,7 +19,7 @@ build() {
     clang++ -std=c++17 -O2 -Wall -fobjc-arc \
         -Icommon -I../dx12/common -I"../dx12/$1" \
         "$1/$1.mm" -o "$OUT/$2" \
-        -framework Cocoa -framework Metal -framework MetalKit -framework QuartzCore
+        -framework Cocoa -framework Metal -framework QuartzCore
 }
 
 TARGET=${1:-all}
