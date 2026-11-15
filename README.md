@@ -153,6 +153,10 @@ and keys above. Apple GPUs have no double precision, so `--fp64` / `D` use
 double-float arithmetic (about 48 significant bits), which passes the same
 `--verify-gpu` checks. See [native/metal/README.md](native/metal/README.md).
 
+The Metal build also has `native/build/invariant_j`, Klein's modular j-invariant
+on the upper half-plane (each pixel reduced to the fundamental domain of
+SL(2,ℤ), then summed as a q-series); `F` cycles j, `E₄` and `E₆`.
+
 ## Browser renderer
 
 Open `js/index.html` in a browser supporting WebGL2 and the `EXT_color_buffer_float` extension.
