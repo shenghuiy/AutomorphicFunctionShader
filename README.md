@@ -155,7 +155,8 @@ double-float arithmetic (about 48 significant bits), which passes the same
 
 The Metal build also has `native/build/invariant_j`, Klein's modular j-invariant
 on the upper half-plane (each pixel reduced to the fundamental domain of
-SL(2,ℤ), then summed as a q-series); `F` cycles j, `E₄` and `E₆`.
+SL(2,ℤ), then summed as a q-series); `F` cycles j, `E₄` and `E₆`; `H` (or `--disk`) maps the half-plane onto the
+Poincaré unit disk.
 
 ## Browser renderer
 

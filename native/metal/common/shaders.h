@@ -41,7 +41,7 @@ struct View {
     float cx[2], cy[2], scale[2];
     uint mode, func;
     float dens;
-    uint sphere;
+    uint sphere;      // view: 0 complex plane, 1 Riemann sphere, 2 Poincare disk
     float radius[2];
     float rot[9][2];  // 3x3 rotation, row j = image of view axis j (x, y, z)
     uint palette;     // phase colours: 0 hue wheel, 1 GreenPinkTones
@@ -189,6 +189,10 @@ float2 expi(float2 p) { float c; float s = sincos(p.x, c); return float2(c, s) *
 //   map preserves orientation, so the sphere and the plane are not mirrored.
 //   Returns false off the sphere. `front` is the view-space depth (1 at the
 //   centre of the disc, 0 at the rim) and `cover` the antialiased disc coverage.
+// Disk view (upper half-plane groups): the unit disk w = offset / v.radius, mapped
+//   conformally onto the upper half-plane by z = i (1 + w) / (1 - w), so w = 0 is
+//   z = i and the boundary circle is the real axis (w = 1 is the point at infinity).
+//   Returns false outside the disk; `cover` is the antialiased disk coverage.
 // Computed in double-float in both modes, to keep deep zooms sharp.
 bool pixelZ(constant View& v, uint2 p, thread cdf& z, thread float& front, thread float& cover) {
     // Pixel offsets are exact in float at supported window sizes.
@@ -197,6 +201,15 @@ bool pixelZ(constant View& v, uint2 p, thread cdf& z, thread float& front, threa
     df scale = df2(v.scale);
     if (v.sphere == 0) {
         z = cdf(df2(v.cx) + df(offset.x) * scale, df2(v.cy) + df(offset.y) * scale);
+        return true;
+    }
+    if (v.sphere == 2) {
+        df rad = df2(v.radius);
+        cover = saturate(rad.hi - length(offset) + 0.5f);
+        if (length(offset) >= rad.hi) { z = cdf(0.0f, 0.0f); return false; }
+        cdf w = cdf(df(offset.x) / rad, df(offset.y) / rad);
+        cdf q = cdiv(cdf(df(1.0f) + w.x, w.y), cdf(df(1.0f) - w.x, -w.y));  // (1 + w) / (1 - w)
+        z = cdf(-q.y, q.x);  // times i
         return true;
     }
     df rad = df2(v.radius), rad2 = rad * rad;
@@ -344,7 +357,8 @@ fragment float4 fragmentMain(VOut in [[stage_in]],
 #ifdef PLOT_OVERLAY
     col = plotOverlay(v, col, z);
 #endif
-    if (v.sphere != 0) col = mix(float3(0.045f, 0.05f, 0.065f), col * (0.55f + 0.45f * front), cover);
+    if (v.sphere == 1) col = mix(float3(0.045f, 0.05f, 0.065f), col * (0.55f + 0.45f * front), cover);
+    else if (v.sphere == 2) col = mix(float3(0.045f, 0.05f, 0.065f), col, cover);
     return float4(pow(abs(col), 1.0f / 1.1f), 1.0f);
 }
 )MSL";

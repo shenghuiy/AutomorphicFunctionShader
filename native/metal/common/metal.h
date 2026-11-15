@@ -15,8 +15,8 @@ struct ViewConstants {
     float cx[2], cy[2], scale[2];
     uint32_t mode, function;
     float density;
-    uint32_t sphere;      // 0: complex plane, 1: Riemann sphere
-    float radius[2];      // sphere radius in pixels
+    uint32_t sphere;      // 0: complex plane, 1: Riemann sphere, 2: Poincare disk
+    float radius[2];      // sphere / disk radius in pixels
     float rot[9][2];      // sphere rotation: images of the view x, y, z axes
     uint32_t palette;     // phase colours: 0 hue wheel, 1 GreenPinkTones
     uint32_t count;       // total number of summed items (`end` of them are done when drawing)

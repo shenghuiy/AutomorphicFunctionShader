@@ -206,6 +206,9 @@ int main(int argc, char** argv) {
         0,              // one summed item
         J_MSL,
         build, reference, value, invariance,
+        false,          // no Riemann sphere view
+        0,              // any partial sum can be shown
+        true,           // H key: Poincare disk view
     };
     return runApp(group, argc, argv);
 }
