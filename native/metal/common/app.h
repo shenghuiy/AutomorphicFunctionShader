@@ -16,6 +16,8 @@
 //   [ / ]           contour density     R            reset view
 //   S               plane / Riemann sphere view (groups with Group::sphere);
 //                   in the sphere view, drag rotates and the wheel zooms
+//   H               upper half-plane / Poincare disk view (groups with Group::disk);
+//                   in the disk view the wheel zooms about the centre
 //   I               invariance check (console)
 //   P               save PNG of the current window
 //   Esc             quit
@@ -141,6 +143,9 @@ struct Group {
     // 4 minPartial, ... of them sum to m/count of the total, and only those
     // partial sums are meaningful: the app stops at them and scales by count/m.
     int minPartial = 0;
+    // Offer the Poincare disk view (H key, --disk): the upper half-plane mapped
+    // conformally onto the unit disk, z = i (1 + w) / (1 - w). For groups acting on it.
+    bool disk = false;
 };
 
 using Clock = std::chrono::steady_clock;
@@ -157,7 +162,9 @@ struct App {
     // (x right, y up, z toward the viewer); zoom 1 fits the sphere in the window.
     bool sphere = false;
     double rot[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
-    double sphereZoom = 1.0;
+    double sphereZoom = 1.0;  // also the zoom of the disk view
+    // Poincare disk view: the unit disk of radius radius() pixels, centred in the window.
+    bool disk = false;
     size_t N = 0;
     bool fp64 = false;
     int mode = 0, func = 0, palette = 0;
@@ -179,6 +186,11 @@ struct App {
     // Window pixel (top-left origin) -> z; matches pixelZ in shaders.h. NaN off the sphere.
     cd toZ(int x, int y) const {
         double ox = x + 0.5 - 0.5 * W, oy = (H - 1 - y) + 0.5 - 0.5 * H;
+        if (disk) {
+            cd w = cd(ox, oy) / radius();
+            if (std::norm(w) >= 1) return {NAN, NAN};
+            return cd(0, 1) * (1.0 + w) / (1.0 - w);
+        }
         if (!sphere) return {cx + ox * scale(), cy + oy * scale()};
         double R = radius(), R2 = R * R, o2 = ox * ox + oy * oy;
         if (o2 >= R2) return {NAN, NAN};
@@ -281,6 +293,13 @@ static void toggleSphere() {
     consoleLog("view: %s\n", app.sphere ? "Riemann sphere (drag rotates, wheel zooms)" : "complex plane");
 }
 
+// H key: upper half-plane <-> Poincare disk.
+static void toggleDisk() {
+    app.disk = !app.disk;
+    app.sphereZoom = 1.0;
+    consoleLog("view: %s\n", app.disk ? "Poincare disk (wheel zooms about the centre)" : "complex plane");
+}
+
 static void buildGroup() {
     std::vector<Mat> mats = app.group->build(app.N);
     app.count = int(mats.size());
@@ -313,14 +332,14 @@ static void updateTitle() {
     cd z = app.toZ(px, py);
     char where[160], extent[64];
     if (std::isnan(z.real())) {
-        std::snprintf(where, sizeof where, "off the sphere");
+        std::snprintf(where, sizeof where, app.disk ? "outside the disk" : "off the sphere");
     } else {
         double k = app.group->minPartial && app.done ? double(app.count) / app.done : 1.0;
         cd val = app.group->value(k * cd(a[0], a[1]), k * cd(a[2], a[3]), app.func, z);
         std::snprintf(where, sizeof where, "z = %.6f%+.6fi   %s(z) = %.6g%+.6gi", z.real(), z.imag(),
                       app.group->funcNames[app.func], val.real(), val.imag());
     }
-    if (app.sphere) std::snprintf(extent, sizeof extent, "sphere zoom %.3g", app.sphereZoom);
+    if (app.sphere || app.disk) std::snprintf(extent, sizeof extent, "%s zoom %.3g", app.disk ? "disk" : "sphere", app.sphereZoom);
     else std::snprintf(extent, sizeof extent, "width %.3g", app.scale() * app.W);
     char buf[512];
     std::snprintf(buf, sizeof buf, "%s  |  %s  |  %s  |  terms %d/%d %s |  %s  |  %s",
@@ -338,7 +357,7 @@ static void verifyGpuValues() {
         renderer.readPixel(p[0], p[1], sums);
         cd actual[] = {{sums[0], sums[1]}, {sums[2], sums[3]}};
         cd z = app.toZ(p[0], p[1]), reference[2];
-        if (std::isnan(z.real())) { consoleLog("GPU check (%d,%d): off the sphere, skipped\n", p[0], p[1]); continue; }
+        if (std::isnan(z.real())) { consoleLog("GPU check (%d,%d): outside the view, skipped\n", p[0], p[1]); continue; }
         app.group->reference(z, reference);
         for (int i = 0; i < 2; ++i) {
             double error = std::abs(actual[i] - reference[i]) / std::max(1e-30, std::abs(reference[i]));
@@ -373,7 +392,7 @@ static ViewConstants viewConstants(int start, int end) {
     splitDouble(app.scale(), v.scale);
     v.mode = uint32_t(app.mode); v.function = uint32_t(app.func);
     v.density = app.dens;
-    v.sphere = app.sphere;
+    v.sphere = app.disk ? 2 : (app.sphere ? 1 : 0);
     splitDouble(app.radius(), v.radius);
     for (int j = 0; j < 3; j++)
         for (int i = 0; i < 3; i++) splitDouble(app.rot[j][i], v.rot[3 * j + i]);
@@ -435,7 +454,7 @@ static void frame() {
 }
 
 static void zoomAt(int x, int y, double k) {
-    if (app.sphere) {  // the sphere stays centred in the window
+    if (app.sphere || app.disk) {  // the sphere / disk stays centred in the window
         app.sphereZoom = std::clamp(app.sphereZoom / k, 0.05, 1e4);
         restart();
         return;
@@ -461,6 +480,7 @@ static void keyPressed(unichar key) {
     case ']': app.dens = std::min(8.0f, app.dens * 1.25f); break;
     case 'r': case 'R': resetView(); restart(); break;
     case 's': case 'S': if (app.group->sphere) { toggleSphere(); restart(); } break;
+    case 'h': case 'H': if (app.group->disk) { toggleDisk(); restart(); } break;
     case 'i': case 'I': app.group->invariance(); break;
     case 'p': case 'P': app.saveRequested = true; break;
     case 27: [NSApp terminate:nil]; break;
@@ -494,7 +514,9 @@ static void keyPressed(unichar key) {
     int x, y;
     [self pixelOf:event x:&x y:&y];
     if (app.dragging) {
-        if (app.sphere) {
+        if (app.disk) {
+            // the disk stays centred
+        } else if (app.sphere) {
             dragSphere(x - app.mx, app.my - y);
         } else {
             double s = app.scale();
@@ -551,6 +573,8 @@ static int runApp(const Group& group, int argc, char** argv) {
             app.fp64 = true;
         } else if (option == "--sphere" && group.sphere) {
             app.sphere = true;
+        } else if (option == "--disk" && group.disk) {
+            app.disk = true;
         } else if (option == "--colors") {
             const std::string name = i + 1 < argc ? argv[i + 1] : "";
             if (name == "hue") app.palette = 0;
@@ -613,6 +637,8 @@ static int runApp(const Group& group, int argc, char** argv) {
             std::printf("  --terms <count>         Number of group elements (default: %zu)\n", group.defaultTerms);
         if (group.sphere)
             std::printf("  --sphere                Start in the Riemann sphere view, centre facing the viewer\n");
+        if (group.disk)
+            std::printf("  --disk                  Start in the Poincare disk view (upper half-plane mapped to the unit disk)\n");
         std::printf("  --function <0|1|2>      Displayed function: %s, %s or %s (default: 0)\n",
                     group.funcNames[0], group.funcNames[1], group.funcNames[2]);
         std::printf(
@@ -629,6 +655,7 @@ static int runApp(const Group& group, int argc, char** argv) {
     std::printf("  F: function (%s, %s, %s)   C: colours (hue wheel / GreenPinkTones)\n  [ ]: contour density   R: reset   I: invariance check   P: save PNG   Esc: quit\n",
                 group.funcNames[0], group.funcNames[1], group.funcNames[2]);
     if (group.sphere) std::printf("  S: plane / Riemann sphere (in the sphere view, drag rotates and the wheel zooms)\n");
+    if (group.disk) std::printf("  H: upper half-plane / Poincare disk (in the disk view the wheel zooms about the centre)\n");
     std::printf("\n");
     faceSphereToward(cd(app.cx, app.cy));  // --center also picks the face the sphere view starts on
 

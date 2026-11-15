@@ -34,6 +34,7 @@ native/build/icosahedral --sphere --center 1.5 0.8
 native/build/pearcey --function 1 --colors greenpink
 native/build/kantorovich --fp64 --function 2
 native/build/invariant_j --fp64 --center 0.3 0.01 --span 0.02
+native/build/invariant_j --disk --function 1
 ```
 
 The options and keys are those described in the [top-level README](../../README.md)
@@ -92,6 +93,12 @@ each q-series reach double precision:
 Close to a cusp (a rational point on the real axis), the reduced point has
 `Im τ > 12` and `|j| ≈ e^{2π Im τ}` exceeds float range. There j equals `1/q` to
 30 digits, so its phase `−2π Re τ` is kept and only the modulus is capped.
+
+`H` (or `--disk`) maps the upper half-plane conformally onto the unit disk,
+`τ = i(1 + w)/(1 − w)`, the Poincaré disk model: `w = 0` is `τ = i`, the boundary
+circle is the real axis and `w = 1` is `τ = ∞`. The fundamental-domain tiling then
+shows as ideal triangles accumulating at the rim. The wheel zooms about the
+centre; the window title reports `τ` under the cursor.
 
 `I` prints j(i) = 1728, j(i√2) = 8000 and j(ρ) = 0, j at `0.3 + 0.6i` against
 the direct q-series (no reduction), and the invariance of j and the weight-4
