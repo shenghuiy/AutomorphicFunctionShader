@@ -14,35 +14,7 @@
 // Sums: t0 = Psi,  t1 = dPsi/dx
 static const char* PEARCEY_MSL = R"MSL(
 #define FADE_POLES 0
-#if FP64
-// Double-float exp, and exp(i p) for complex p. ln 2 and pi/2 are given as
-// double-floats (hi, lo).
-df dexp(df x) {  // x = k ln 2 + r, |r| <= 0.35, Taylor series in r
-    if (x.hi < -80.0f) return df(0.0f);
-    float k = rint(x.hi * 1.44269504f);
-    df r = x - df(k) * df(0.6931472f, -1.9046542e-09f);
-    df p = df(1.0f);
-    for (int n = 13; n >= 1; --n) p = df(1.0f) + r * p / df(float(n));
-    return ldexpdf(p, int(k));
-}
-cdf expi(cdf p) {
-    // p.x = k pi/2 + r, |r| <= pi/4, Taylor series in r
-    float k = rint(p.x.hi * 0.636619772f);
-    df r = p.x - df(k) * df(1.5707964f, -4.371139e-08f), r2 = r * r;
-    df c = df(1.0f), s = df(1.0f);
-    for (int n = 16; n >= 2; n -= 2) {
-        c = df(1.0f) - r2 * c / df(float(n * (n - 1)));
-        s = df(1.0f) - r2 * s / df(float(n * (n + 1)));
-    }
-    s = s * r;
-    int q = int(k) & 3;
-    cdf e = q == 0 ? cdf(c, s) : (q == 1 ? cdf(-s, c) : (q == 2 ? cdf(-c, -s) : cdf(s, -c)));
-    return e * dexp(-p.y);
-}
-#else
-float dsqrt(float d) { return sqrt(d); }
-float2 expi(float2 p) { float c; float s = sincos(p.x, c); return float2(c, s) * exp(-p.y); }
-#endif
+// dexp, expi and dsqrt are in the shared frame (shaders.h).
 
 // Path t(s) = s + i LAMBDA g / sqrt(1 + g^2), g = phi'(s) / kappa; see pearcey.h.
 void term(C z, C node, uint index, thread C& t0, thread C& t1) {
