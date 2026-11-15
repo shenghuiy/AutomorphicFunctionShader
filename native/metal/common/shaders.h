@@ -190,8 +190,9 @@ float2 expi(float2 p) { float c; float s = sincos(p.x, c); return float2(c, s) *
 //   Returns false off the sphere. `front` is the view-space depth (1 at the
 //   centre of the disc, 0 at the rim) and `cover` the antialiased disc coverage.
 // Disk view (upper half-plane groups): the unit disk w = offset / v.radius, mapped
-//   conformally onto the upper half-plane by z = i (1 + w) / (1 - w), so w = 0 is
-//   z = i and the boundary circle is the real axis (w = 1 is the point at infinity).
+//   conformally onto the upper half-plane by z = (z0 - conj(z0) w) / (1 - w) with
+//   z0 = (v.cx, v.cy), Im z0 > 0, so w = 0 is z0, the boundary circle is the real
+//   axis and w = 1 is the point at infinity.
 //   Returns false outside the disk; `cover` is the antialiased disk coverage.
 // Computed in double-float in both modes, to keep deep zooms sharp.
 bool pixelZ(constant View& v, uint2 p, thread cdf& z, thread float& front, thread float& cover) {
@@ -208,8 +209,8 @@ bool pixelZ(constant View& v, uint2 p, thread cdf& z, thread float& front, threa
         cover = saturate(rad.hi - length(offset) + 0.5f);
         if (length(offset) >= rad.hi) { z = cdf(0.0f, 0.0f); return false; }
         cdf w = cdf(df(offset.x) / rad, df(offset.y) / rad);
-        cdf q = cdiv(cdf(df(1.0f) + w.x, w.y), cdf(df(1.0f) - w.x, -w.y));  // (1 + w) / (1 - w)
-        z = cdf(-q.y, q.x);  // times i
+        cdf z0 = cdf(df2(v.cx), df2(v.cy)), z0bar = cdf(df2(v.cx), -df2(v.cy));
+        z = cdiv(z0 - cm(z0bar, w), cdf(df(1.0f) - w.x, -w.y));
         return true;
     }
     df rad = df2(v.radius), rad2 = rad * rad;
