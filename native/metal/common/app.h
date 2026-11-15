@@ -144,8 +144,10 @@ struct Group {
     // partial sums are meaningful: the app stops at them and scales by count/m.
     int minPartial = 0;
     // Offer the Poincare disk view (H key, --disk): the upper half-plane mapped
-    // conformally onto the unit disk, z = i (1 + w) / (1 - w). For groups acting on it.
+    // conformally onto the unit disk, z = (z0 - conj(z0) w) / (1 - w), where z0 is the
+    // plane view's centre (--center), which lands at the middle of the disk.
     bool disk = false;
+    double diskCx = 0, diskCy = 1;  // z0 for --disk without --center
 };
 
 using Clock = std::chrono::steady_clock;
@@ -189,7 +191,8 @@ struct App {
         if (disk) {
             cd w = cd(ox, oy) / radius();
             if (std::norm(w) >= 1) return {NAN, NAN};
-            return cd(0, 1) * (1.0 + w) / (1.0 - w);
+            cd z0(cx, cy);
+            return (z0 - std::conj(z0) * w) / (1.0 - w);
         }
         if (!sphere) return {cx + ox * scale(), cy + oy * scale()};
         double R = radius(), R2 = R * R, o2 = ox * ox + oy * oy;
@@ -274,8 +277,8 @@ static void dragSphere(double dx, double dy) {
 }
 
 static void resetView() {
-    app.cx = app.group->cx;
-    app.cy = app.group->cy;
+    app.cx = app.disk ? app.group->diskCx : app.group->cx;
+    app.cy = app.disk ? app.group->diskCy : app.group->cy;
     app.span = app.group->span;
     app.sphereZoom = 1.0;
     faceSphereToward(cd(app.cx, app.cy));
@@ -297,7 +300,8 @@ static void toggleSphere() {
 static void toggleDisk() {
     app.disk = !app.disk;
     app.sphereZoom = 1.0;
-    consoleLog("view: %s\n", app.disk ? "Poincare disk (wheel zooms about the centre)" : "complex plane");
+    if (app.disk && !(app.cy > 0)) { app.cx = app.group->diskCx; app.cy = app.group->diskCy; }  // must lie in the half-plane
+    consoleLog("view: %s\n", app.disk ? "Poincare disk (the plane's centre is the disk's centre; wheel zooms)" : "complex plane");
 }
 
 static void buildGroup() {
@@ -564,7 +568,7 @@ static int runApp(const Group& group, int argc, char** argv) {
         value = std::strtod(text, &end);
         return end != text && *end == '\0' && errno != ERANGE && std::isfinite(value);
     };
-    bool help = false;
+    bool help = false, centerGiven = false;
     for (int i = 1; i < argc; i++) {
         const std::string option = argv[i];
         if (option == "--help" || option == "-h") {
@@ -592,6 +596,7 @@ static int runApp(const Group& group, int argc, char** argv) {
                 return 1;
             }
             i += 2;
+            centerGiven = true;
         } else if (option == "--span") {
             if (i + 1 >= argc || !readNumber(argv[i + 1], app.span) || app.span <= 0) {
                 std::fprintf(stderr, "--span requires a finite number greater than zero\n");
@@ -629,6 +634,11 @@ static int runApp(const Group& group, int argc, char** argv) {
             return 1;
         }
     }
+    if (app.disk && !centerGiven) { app.cx = group.diskCx; app.cy = group.diskCy; }
+    if (app.disk && !(app.cy > 0)) {
+        std::fprintf(stderr, "--disk needs a centre in the upper half-plane (--center <real> <imag> with imag > 0)\n");
+        return 1;
+    }
     if (help) {
         std::printf("Usage: %s [options]\n", group.exeName);
         std::printf("  --center <real> <imag>  Plot center (default: %g %g)\n", group.cx, group.cy);
@@ -638,7 +648,8 @@ static int runApp(const Group& group, int argc, char** argv) {
         if (group.sphere)
             std::printf("  --sphere                Start in the Riemann sphere view, centre facing the viewer\n");
         if (group.disk)
-            std::printf("  --disk                  Start in the Poincare disk view (upper half-plane mapped to the unit disk)\n");
+            std::printf("  --disk                  Start in the Poincare disk view; --center is the point at its middle (default: %g %g)\n",
+                        group.diskCx, group.diskCy);
         std::printf("  --function <0|1|2>      Displayed function: %s, %s or %s (default: 0)\n",
                     group.funcNames[0], group.funcNames[1], group.funcNames[2]);
         std::printf(

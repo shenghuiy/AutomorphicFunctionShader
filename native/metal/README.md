@@ -95,10 +95,12 @@ Close to a cusp (a rational point on the real axis), the reduced point has
 30 digits, so its phase `−2π Re τ` is kept and only the modulus is capped.
 
 `H` (or `--disk`) maps the upper half-plane conformally onto the unit disk,
-`τ = i(1 + w)/(1 − w)`, the Poincaré disk model: `w = 0` is `τ = i`, the boundary
-circle is the real axis and `w = 1` is `τ = ∞`. The fundamental-domain tiling then
-shows as ideal triangles accumulating at the rim. The wheel zooms about the
-centre; the window title reports `τ` under the cursor.
+`τ = (τ₀ − τ̄₀ w)/(1 − w)`, the Poincaré disk model, where `τ₀` is the centre
+(`--center`, default `0 1` for `--disk`; pressing `H` keeps the plane view's
+centre): `w = 0` is `τ₀`, the boundary circle is the real axis and `w = 1` is
+`τ = ∞`. The fundamental-domain tiling then shows as ideal triangles accumulating
+at the rim. The wheel zooms about the centre; the window title reports `τ` under
+the cursor. For example `--disk --center -0.5 0.8660254` centres on ρ.
 
 `I` prints j(i) = 1728, j(i√2) = 8000 and j(ρ) = 0, j at `0.3 + 0.6i` against
 the direct q-series (no reduction), and the invariance of j and the weight-4
