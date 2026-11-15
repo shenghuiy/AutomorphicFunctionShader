@@ -84,7 +84,7 @@ static std::vector<Mat> build(size_t requested) {
     size_t n = 1;
     while (n < requested) n *= 2;  // pearcey::nodes needs a power of two
     nodeCount = n;
-    std::printf("quadrature: %zu midpoint nodes per pixel on the deformed path\n", n);
+    consoleLog("quadrature: %zu midpoint nodes per pixel on the deformed path\n", n);
     return pearcey::nodes(n);
 }
 
@@ -99,20 +99,20 @@ static void invariance() {
     cd p[2], q[2];
     pearcey::psi(0, 0, nodeCount, p);
     cd exact = 2 * std::tgamma(1.25) * std::polar(1.0, 3.14159265358979323846 / 8);
-    std::printf("\nquadrature check, %zu nodes\n", nodeCount);
-    std::printf("  Psi(0,0)      = %+.12f %+.12fi   vs 2 Gamma(5/4) e^{i pi/8}: rel.err %.1e\n", p[0].real(), p[0].imag(), err(p[0], exact));
+    consoleLog("\nquadrature check, %zu nodes\n", nodeCount);
+    consoleLog("  Psi(0,0)      = %+.12f %+.12fi   vs 2 Gamma(5/4) e^{i pi/8}: rel.err %.1e\n", p[0].real(), p[0].imag(), err(p[0], exact));
     const double pts[][2] = {{1.5, -2.0}, {-3.0, 1.0}, {2.0, -4.0}, {7.0, -12.0}};
     for (const auto& xy : pts) {
         pearcey::psi(xy[0], xy[1], nodeCount, p);
-        std::printf("  Psi(%g,%g) = %+.12f %+.12fi", xy[0], xy[1], p[0].real(), p[0].imag());
-        if (xy[1] >= -4) std::printf("   vs rotated path: rel.err %.1e", err(p[0], pearcey::psiRotated(xy[0], xy[1])));
+        consoleLog("  Psi(%g,%g) = %+.12f %+.12fi", xy[0], xy[1], p[0].real(), p[0].imag());
+        if (xy[1] >= -4) consoleLog("   vs rotated path: rel.err %.1e", err(p[0], pearcey::psiRotated(xy[0], xy[1])));
         pearcey::psi(xy[0], xy[1], 20000, q);
-        std::printf("   vs 20000 nodes: rel.err %.1e", err(p[0], q[0]));
+        consoleLog("   vs 20000 nodes: rel.err %.1e", err(p[0], q[0]));
         // Consistency check only: for -x the path is the mirror image t -> -t and the
         // nodes are symmetric, so this sums the same terms in reverse order and
         // agrees to rounding error by construction.
         pearcey::psi(-xy[0], xy[1], nodeCount, q);
-        std::printf("   Psi(-x,y) = Psi(x,y): rel.err %.1e\n", err(q[0], p[0]));
+        consoleLog("   Psi(-x,y) = Psi(x,y): rel.err %.1e\n", err(q[0], p[0]));
     }
 }
 

@@ -23,6 +23,7 @@
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/CAMetalLayer.h>
 
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -31,8 +32,10 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdarg>
 #include <cstdlib>
 #include <ctime>
+#include <deque>
 #include <limits>
 #include <string>
 #include <vector>
@@ -41,6 +44,68 @@ static void fatal(const char* msg) {
     std::fprintf(stderr, "\nERROR: %s\n", msg);
     std::fflush(nullptr);
     _exit(1);
+}
+
+// Console output of actions: render times, saved files, view changes, checks.
+// In an interactive terminal only the last Console::LINES lines are shown, in a
+// region below the start-up banner that is redrawn in place (ANSI escapes) as
+// each new line arrives. Piped output and --snapshot runs print every line.
+struct Console {
+    static constexpr size_t LINES = 5;
+    bool rolling = false;
+    std::string partial;            // text after the last newline, until the line is complete
+    std::deque<std::string> lines;  // the last LINES complete lines
+    size_t shown = 0;               // lines currently drawn in the region
+
+    void write(const char* text) {
+        if (!rolling) { std::fputs(text, stdout); return; }
+        partial += text;
+        bool added = false;
+        for (size_t nl; (nl = partial.find('\n')) != std::string::npos;) {
+            std::string line = partial.substr(0, nl);
+            partial.erase(0, nl + 1);
+            if (line.empty()) continue;  // blank separators would waste the region
+            lines.push_back(line);
+            if (lines.size() > LINES) lines.pop_front();
+            added = true;
+        }
+        if (added) redraw();
+    }
+    // Shorten to `width` columns (one per UTF-8 code point) so no line wraps,
+    // which would break the cursor arithmetic in redraw().
+    static std::string fit(const std::string& line, size_t width) {
+        size_t columns = 0;
+        for (size_t i = 0; i < line.size(); i++) {
+            if ((uint8_t(line[i]) & 0xC0) == 0x80) continue;  // UTF-8 continuation byte
+            if (++columns > width) return line.substr(0, i);
+        }
+        return line;
+    }
+    void redraw() {
+        winsize ws = {};
+        size_t width = ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 1 ? ws.ws_col - 1 : 79;
+        std::string out;
+        if (shown > 0) out += "\r\x1b[" + std::to_string(shown) + "A";  // back to the region's first line
+        for (const std::string& line : lines) out += "\x1b[2K" + fit(line, width) + "\n";
+        out += "\x1b[J";  // clear anything below
+        std::fwrite(out.data(), 1, out.size(), stdout);
+        std::fflush(stdout);
+        shown = lines.size();
+    }
+};
+static Console console;
+
+// printf for actions; see Console.
+__attribute__((format(printf, 1, 2))) static void consoleLog(const char* format, ...) {
+    va_list args, copy;
+    va_start(args, format);
+    va_copy(copy, args);
+    int n = std::vsnprintf(nullptr, 0, format, copy);
+    va_end(copy);
+    std::vector<char> text(size_t(std::max(n, 0)) + 1);
+    std::vsnprintf(text.data(), text.size(), format, args);
+    va_end(args);
+    console.write(text.data());
 }
 
 #include "mobius.h"  // ../../dx12/common, portable
@@ -213,7 +278,7 @@ static void toggleSphere() {
         faceSphereToward(cd(app.cx, app.cy));
     }
     app.sphere = !app.sphere;
-    std::printf("view: %s\n", app.sphere ? "Riemann sphere (drag rotates, wheel zooms)" : "complex plane");
+    consoleLog("view: %s\n", app.sphere ? "Riemann sphere (drag rotates, wheel zooms)" : "complex plane");
 }
 
 static void buildGroup() {
@@ -273,17 +338,17 @@ static void verifyGpuValues() {
         renderer.readPixel(p[0], p[1], sums);
         cd actual[] = {{sums[0], sums[1]}, {sums[2], sums[3]}};
         cd z = app.toZ(p[0], p[1]), reference[2];
-        if (std::isnan(z.real())) { std::printf("GPU check (%d,%d): off the sphere, skipped\n", p[0], p[1]); continue; }
+        if (std::isnan(z.real())) { consoleLog("GPU check (%d,%d): off the sphere, skipped\n", p[0], p[1]); continue; }
         app.group->reference(z, reference);
         for (int i = 0; i < 2; ++i) {
             double error = std::abs(actual[i] - reference[i]) / std::max(1e-30, std::abs(reference[i]));
-            std::printf("GPU check (%d,%d) %s: relative error %.3e\n", p[0], p[1], app.group->sumNames[i], error);
+            consoleLog("GPU check (%d,%d) %s: relative error %.3e\n", p[0], p[1], app.group->sumNames[i], error);
             if (!std::isfinite(error)) fatal("Non-finite GPU verification result");
             worst = std::max(worst, error);
         }
     }
     if (worst > (app.fp64 ? 1e-9 : 5e-3)) fatal("GPU sums do not match CPU reference");
-    std::printf("GPU verification passed (%s)\n", precisionName());
+    consoleLog("GPU verification passed (%s)\n", precisionName());
 }
 
 static void savePNG(const char* path = nullptr) {
@@ -296,7 +361,7 @@ static void savePNG(const char* path = nullptr) {
                   t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
     const char* output = path ? path : name;
     if (!writePNG(output, app.W, app.H, rgb)) fatal("Could not write PNG snapshot");
-    std::printf("saved %s (%dx%d, %d/%d terms)\n", output, app.W, app.H, app.done, app.count);
+    consoleLog("saved %s (%dx%d, %d/%d terms)\n", output, app.W, app.H, app.done, app.count);
 }
 
 static ViewConstants viewConstants(int start, int end) {
@@ -345,7 +410,7 @@ static void frame() {
         app.dirty = true;
         if (app.done >= app.count) {
             app.renderMs = msSince(app.startT);
-            std::printf("render complete: %d terms, %dx%d, %s, %.0f ms\n", app.count, app.W, app.H,
+            consoleLog("render complete: %d terms, %dx%d, %s, %.0f ms\n", app.count, app.W, app.H,
                         precisionName(), app.renderMs);
         }
     }
@@ -618,6 +683,7 @@ static int runApp(const Group& group, int argc, char** argv) {
         std::string sources[2] = {shaderSource(group.msl, false), shaderSource(group.msl, true)};
         app.gpu = renderer.initialize(device, app.layer.pixelFormat, sources);
         std::printf("Metal\nGPU    %s\n\n", app.gpu.c_str());
+        console.rolling = isatty(STDOUT_FILENO) && snapshotPath.empty();
         buildGroup();  // frame() sizes the drawables and the accumulator
 
         [app.window makeKeyAndOrderFront:nil];
