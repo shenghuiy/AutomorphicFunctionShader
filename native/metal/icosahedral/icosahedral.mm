@@ -43,7 +43,7 @@ static std::vector<Mat> rotations;  // the 60 rotations (unshifted)
 static std::vector<Mat> build(size_t) {
     rotations = icosahedral::group();
     if (rotations.size() != icosahedral::ORDER) fatal("Icosahedral group closure did not give 60 elements");
-    std::printf("group: icosahedral rotations, %zu elements (exact sum)\n", rotations.size());
+    consoleLog("group: icosahedral rotations, %zu elements (exact sum)\n", rotations.size());
     return icosahedral::gpuMatrices(rotations);
 }
 
@@ -57,10 +57,10 @@ static cd value(cd F, cd h, int func, cd z) { return func == 0 ? F : (func == 1 
 static void invariance() {
     cd z0(0.3, 0.6);
     cd Fz = icosahedral::F(rotations, z0);
-    std::printf("\ninvariance check, icosahedral group (exact), z0 = 0.3+0.6i\n  F(z0)        = %+.8g %+.8gi\n", Fz.real(), Fz.imag());
+    consoleLog("\ninvariance check, icosahedral group (exact), z0 = 0.3+0.6i\n  F(z0)        = %+.8g %+.8gi\n", Fz.real(), Fz.imag());
     for (int k = 0; k < 4; k++) {
         cd Fg = icosahedral::F(rotations, mobius(icosahedral::GENS[k], z0));
-        std::printf("  F(%-5s(z0)) = %+.8g %+.8gi   rel.err %.1e\n", icosahedral::GEN_NAMES[k], Fg.real(), Fg.imag(), std::abs(Fg - Fz) / std::abs(Fz));
+        consoleLog("  F(%-5s(z0)) = %+.8g %+.8gi   rel.err %.1e\n", icosahedral::GEN_NAMES[k], Fg.real(), Fg.imag(), std::abs(Fg - Fz) / std::abs(Fz));
     }
 }
 

@@ -37,6 +37,9 @@ The options and keys are those described in the [top-level README](../../README.
 (`--help` lists them). The window's drawable is 1400 × 1000 pixels, so snapshots
 match the Windows ones. Pinch on a trackpad also zooms. Run from a terminal: the
 console output (render times, invariance checks, saved files) goes to stdout.
+In an interactive terminal it shows only the last 5 lines below the start-up
+banner, redrawn in place as new lines arrive; piped output and `--snapshot` runs
+print every line.
 
 ## Precision: fp64 is double-float
 

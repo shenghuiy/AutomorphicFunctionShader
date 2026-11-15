@@ -30,7 +30,7 @@ static std::vector<Mat> elements;  // the N group elements currently summed
 static std::vector<Mat> build(size_t N) {
     auto t0 = Clock::now();
     elements = kleinian::enumerate(N);
-    std::printf("group: %zu elements, max ||g|| = %.1f  (enumerated in %.0f ms)\n", elements.size(),
+    consoleLog("group: %zu elements, max ||g|| = %.1f  (enumerated in %.0f ms)\n", elements.size(),
                 std::sqrt(norm2(elements.back())), msSince(t0));
     return elements;
 }
@@ -46,10 +46,10 @@ static cd value(cd P1, cd P2, int func, cd) { return func == 0 ? P1 / P2 : (func
 static void invariance() {
     cd z0(0.3, 0.6);
     cd fz = kleinian::evalSeries(elements, z0).f;
-    std::printf("\ninvariance check with %zu elements, z0 = 0.3+0.6i\n  f(z0)        = %+.8f %+.8fi\n", elements.size(), fz.real(), fz.imag());
+    consoleLog("\ninvariance check with %zu elements, z0 = 0.3+0.6i\n  f(z0)        = %+.8f %+.8fi\n", elements.size(), fz.real(), fz.imag());
     for (int k = 0; k < 4; k++) {
         cd fg = kleinian::evalSeries(elements, mobius(kleinian::GENS[k], z0)).f;
-        std::printf("  f(%-5s(z0)) = %+.8f %+.8fi   rel.err %.1e\n", kleinian::GEN_NAMES[k], fg.real(), fg.imag(), std::abs(fg - fz) / std::abs(fz));
+        consoleLog("  f(%-5s(z0)) = %+.8f %+.8fi   rel.err %.1e\n", kleinian::GEN_NAMES[k], fg.real(), fg.imag(), std::abs(fg - fz) / std::abs(fz));
     }
 }
 

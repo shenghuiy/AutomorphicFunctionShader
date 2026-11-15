@@ -39,7 +39,7 @@ static void check() {
         if (!seen) roots.push_back(r);
     }
     for (cd r : roots) { cd g; evaluate(r, &g); if (std::norm(g) < 1) positive++; else negative++; }
-    std::printf("Derivative finite-difference error %.3g; roots %zu (%d preserving, %d reversing)\n", worst, roots.size(), positive, negative);
+    consoleLog("Derivative finite-difference error %.3g; roots %zu (%d preserving, %d reversing)\n", worst, roots.size(), positive, negative);
     if (worst > 1e-7 || roots.size() != 10 || positive != 4 || negative != 6) fatal("Kantorovich mathematical check failed");
 }
 static std::vector<Mat> build(size_t) { check(); return {{1., 0., 0., 1.}}; }
