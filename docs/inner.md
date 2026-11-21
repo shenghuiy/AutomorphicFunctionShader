@@ -23,7 +23,8 @@ satisfies `Sμ(1/conj(z)) = 1/conj(Sμ(z))`.
 ## Rendering and resolution
 
 Build with `native\dx12\build.bat inner` and run `native\build\inner.exe`.
-The default view is centered at `(0, −0.04)` with span 1.95. Press **F** to
+The default view is centered at `(0, −0.04)` with span 2.25. The default palette is the shared GreenPinkTones scheme.
+Press **C** to switch to the hue wheel. Press **F** to
 cycle through the Cantor portrait, a single atom, and a Blaschke factor.
 Press **P** to save a PNG.
 
