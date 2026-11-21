@@ -1,97 +1,60 @@
 # Complex Plot Shader
 
 Interactive domain coloring of the automorphic function
-`f(z) = P_{-1,-3}(z) / P_{0,-4}(z)` for a two-generator Kleinian group.
-Both renderers approximate the Poincaré series with a finite number of group elements.
+`f(z) = P_{-1,-3}(z) / P_{0,-4}(z)` for a two-generator Kleinian group,
+approximated by a finite Poincaré series.
 
 ![Domain coloring of the automorphic function rendered with 20,000 group elements](docs/img/poincare.png)
 
-DirectX 12 renderer preview using 20,000 terms at 1400 × 1000 pixels.
+Run `native\build\poincare.exe`, or open `js/index.html` in the browser.
 
-See [docs/background.md](docs/background.md) for the math: why `f` is invariant
-under the group, how the series is truncated, and how to read the colors.
+See [docs/background.md](docs/background.md) for more information.
 
 ## Icosahedral group
 
-Both renderers can also plot an automorphic function for the 60 rotations of the
-icosahedron acting on the Riemann sphere:
-
-`F(z) = Σ_{g∈G} h(g(z))`, with `h(z) = (z − 0.05)⁻⁵`.
-
-The group is finite, so the sum is exact. The default view is `|Re z|, |Im z| < 2.5`.
-Choose **Icosahedral** in the browser's Group menu, or run the separate native program
-`native\build\icosahedral.exe`.
-Its Function choices are `F`, the single term `h`, and Klein's invariant `J`.
-
-The icosahedral plot can also be shown on the Riemann sphere. Choose
-**View → Riemann sphere** in the browser, or press `S` in either the browser or
-`icosahedral.exe` (or start it with `--sphere`). The sphere uses stereographic
-projection from the south pole, `z = (X + iY)/(1 + Z)`, so 0 is the north pole and
-∞ the south pole. Seen from outside, this keeps the plane's orientation rather than
-mirroring it. Switching views keeps the point at the centre of the window. On the
-sphere, drag rotates it and the scroll wheel zooms.
+Domain coloring of an automorphic function for the 60 rotations of the
+icosahedron, displayed on the complex plane or the Riemann sphere.
 
 ![Phase portrait of the icosahedral automorphic function](docs/img/icosahedral.png)
 
-See [docs/coxeter.md](docs/coxeter.md) for Coxeter and triangle groups, Klein's
-icosahedral invariants, and how this finite case relates to automorphic functions
-on other Riemann surfaces.
+Run `native\build\icosahedral.exe`, or choose **Icosahedral** in the browser's
+Group menu. Press **S** to switch to the Riemann sphere.
+
+See [docs/coxeter.md](docs/coxeter.md) for more information.
 
 ## Pearcey integral
 
-The native renderer also plots the Pearcey integral, which describes the wave field
-near a cusp caustic:
-
-`Ψ(x, y) = ∫ exp(i(t⁴ + y t² + x t)) dt` over the real line, as a function of `z = x + iy`.
+Phase portrait of the Pearcey integral, which describes the wave field near
+a cusp caustic.
 
 ![Phase portrait of the Pearcey integral with the cusp caustic](docs/img/pearcey.png)
 
-Run `native\build\pearcey.exe`. The default view is `|x| < 10`, `−15 < y < 5` on the
-shorter window side. Its Function choices are `Ψ`, `Ψ` with the caustic
-`27x² + 8y³ = 0` drawn in black, and `∂Ψ/∂x`. `Ψ` is not analytic in `z`, so its
-zeros (inside the cusp) are not all coloured the same way round.
+Run `native\build\pearcey.exe`.
 
-The phase is coloured with the hue wheel, as in the other programs. Press `C` (or pass
-`--colors greenpink`) for Mathematica's `ColorData["GreenPinkTones"]`: dark green at
-`arg = −π`, near white at 0, dark magenta at `+π`. That scheme is not cyclic, so it has a
-seam on the negative real axis.
-
-The integrand does not decay on the real line, so each pixel integrates along a path
-bent into the complex plane, `t(s) = s + iλ g/√(1 + g²)` with `g ∝ φ′(s)` and
-`φ = t⁴ + y t² + x t`, on which `|exp(iφ)| ≤ 1` and the integrand dies off away from
-the stationary points. The midpoint rule on this path converges exponentially; the
-"terms" are its nodes (default 512, enough for double precision in the default view;
-press `+` when zoomed far out). The node count is rounded up to a power of two, and
-the nodes are summed in bit-reversed order so that a frame drawn part-way through the
-sum, while dragging or resizing, is already a valid coarser quadrature. See [docs/pearcey/](docs/pearcey/README.md) for the integration path, the quadrature,
-the double-precision GPU functions, and how the results are verified.
+See [docs/pearcey/](docs/pearcey/README.md) for more information.
 
 ## Kantorovich theorem and harmonic Newton iteration
 
-Run `native\build\kantorovich.exe --fp64` to explore
-`f(z) = z - conjugate(z²/(z³ - 0.6³))` from the Kantorovich illustration.
-Press **F** to cycle its phase portrait, Newton displacement `N(z)-z`, and the
-attraction basins of its ten roots. Drag to pan and scroll to zoom.
+Phase portrait, Newton displacement, and root attraction basins of the
+harmonic function from the Kantorovich illustration.
 
 ![Newton attraction basins](docs/img/kantorovich-basins.png)
 
-See [docs/kantorovich.md](docs/kantorovich.md) for a step-by-step explanation,
-the shader formulas, color meanings, numerical limits and validation commands.
-Build with `native\dx12\build.bat kantorovich`; source and embedded HLSL are in
-`native/dx12/kantorovich/kantorovich.cpp`, using the existing shared renderer.
-The default center is `0 0` and span is `3`.
+Run `native\build\kantorovich.exe --fp64`. Press **F** to cycle through the plots.
+
+See [docs/kantorovich.md](docs/kantorovich.md) for more information.
 
 ## Inner function phase portrait
 
-Run `native\build\inner.exe` to plot a singular inner function whose measure is
-supported on a Cantor subset of the unit circle. The default view shows the
-phase on both sides of the circle. Press **F** to cycle through the Cantor
-portrait, a single-atom example, and a Blaschke factor. The default palette is
-GreenPinkTones. Press **C** to switch to the hue wheel.
+Phase portrait of a singular inner function with a Cantor measure on the
+unit circle, showing the interior and exterior of the disk.
 
 ![Phase portrait of the Cantor singular inner function](docs/img/inner.png)
 
-See [docs/inner.md](docs/inner.md) for the measure, quadrature, and accuracy near the unit circle.
+Run `native\build\inner.exe`. Press **F** to compare the Cantor portrait,
+a single-atom example, and a Blaschke factor.
+
+See [docs/inner.md](docs/inner.md) for more information.
 
 ## Native Windows renderer
 
