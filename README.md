@@ -85,7 +85,7 @@ The default center is `0 0` and span is `3`.
 
 Requires Visual Studio or Build Tools with the MSVC x64 C++ toolchain, the Windows SDK, and a DirectX 12 GPU with double-precision shader support (Windows 10/11).
 
-There are six programs:
+There are five programs:
 
 | Program | Plot | Default center |
 |---|---|---|
@@ -93,11 +93,10 @@ There are six programs:
 | `native\build\icosahedral.exe` | 60 icosahedral rotations, exact sum | `0 0` |
 | `native\build\pearcey.exe` | Pearcey integral, quadrature per pixel | `0 -5` |
 | `native\build\kantorovich.exe` | Harmonic function and Newton basins | `0 0` |
-| `native\build\inner.exe` | Cantor singular inner function, inside and outside the unit disk | `0 0` |
-| `native\build\blaschke.exe` | Infinite Blaschke product approximation | `0 0` |
+| `native\build\inner.exe` | Cantor singular inner function, inside and outside the unit disk | `0 -0.04` |
 
-Run `native\dx12\build.bat` to build all six, or `native\dx12\build.bat poincare` /
-`icosahedral` / `pearcey` / `kantorovich` / `inner` / `blaschke` to build one. All build outputs (`.exe`, `.lib`,
+Run `native\dx12\build.bat` to build all five, or `native\dx12\build.bat poincare` /
+`icosahedral` / `pearcey` / `kantorovich` / `inner` to build one. All build outputs (`.exe`, `.lib`,
 `.exp`, `.obj`) go to `native\build\`.
 Group elements are enumerated on the CPU; HLSL compute shaders sum the series per pixel.
 DirectX 12 handles GPU buffers, domain coloring, and presentation. Both summation modes
@@ -146,10 +145,24 @@ To validate GPU sums against the CPU evaluator at three sample pixels:
 .\native\build\pearcey.exe --fp64 --verify-gpu --snapshot check-pearcey.png
 ```
 
+## Native macOS renderer
+
+The same four programs run on macOS with Metal. Build them with
+`native/metal/build.sh` (or `native/metal/build.sh poincare` for one) and run
+`native/build/poincare`, `icosahedral`, `pearcey` or `kantorovich` with the options
+and keys above. Apple GPUs have no double precision, so `--fp64` / `D` use
+double-float arithmetic (about 48 significant bits), which passes the same
+`--verify-gpu` checks. See [native/metal/README.md](native/metal/README.md).
+
+The Metal build also has `native/build/invariant_j`, Klein's modular j-invariant
+on the upper half-plane (each pixel reduced to the fundamental domain of
+SL(2,ℤ), then summed as a q-series); `F` cycles j, `E₄` and `E₆`; `H` (or `--disk`) maps the half-plane onto the
+Poincaré unit disk, with `--center` as its middle point.
+
 ## Browser renderer
 
-Open `index.html` in a browser supporting WebGL2 and the `EXT_color_buffer_float` extension.
-Keep `complex.js` and `icosahedral.js` in the same folder; the page loads them.
+Open `js/index.html` in a browser supporting WebGL2 and the `EXT_color_buffer_float` extension.
+The page loads `complex.js` and `icosahedral.js` from the same folder.
 Use the on-screen controls to adjust the plot.
 
 ## Source files
@@ -170,28 +183,13 @@ Use the on-screen controls to adjust the plot.
   - `mobius.h`: SL(2,C) matrices and Möbius transformations.
   - `png.h`: dependency-free PNG writer.
 - `native/dx12/build.bat`: builds one or all programs.
-- `native/metal/`: planned Metal implementation for Apple silicon Macs (not started).
-- `index.html`: browser implementation (WebGL2 shaders, UI, Kleinian group).
-- `complex.js`: complex numbers and Möbius matrices for the browser, shared by both groups.
-- `icosahedral.js`: icosahedral group, `F`, `h`, Klein's `J`, and their GLSL snippets for the browser.
+- `native/metal/`: Metal versions of the four programs for macOS; see [native/metal/README.md](native/metal/README.md).
+- `js/index.html`: browser implementation (WebGL2 shaders, UI, Kleinian group).
+- `js/complex.js`: complex numbers and Möbius matrices for the browser, shared by both groups.
+- `js/icosahedral.js`: icosahedral group, `F`, `h`, Klein's `J`, and their GLSL snippets for the browser.
 - `docs/background.md`: mathematical background.
 - `docs/coxeter.md`: Coxeter groups and the icosahedral automorphic function.
 - `docs/pearcey/`: the Pearcey integral: definition, integration path, quadrature, GPU evaluation, and verification.
-
-### Infinite Blaschke product
-
-Build with native\dx12\build.bat blaschke and run native\build\blaschke.exe.
-The pixel shader evaluates the first N normalized factors of
-B(z) = product_n (|a_n|/a_n)(a_n-z)/(1-conj(a_n)z),
-where a_n = (1-0.8/(n+1)^2) exp(i n goldenAngle), n starts at 1.
-This chosen example satisfies sum_n (1-|a_n|) < infinity.
-The screenshot gives no zero sequence for an infinite Blaschke product.
-The default truncation is 256 factors. Use --terms N or the + and - keys
-to change the truncation, drag to pan, and scroll to zoom.
-The product is evaluated directly in the pixel shader using float complex
-arithmetic and float trigonometry. The D key controls the shared compute
-pass. The --verify-gpu option checks that pass only.
-The I key checks the CPU product's boundary modulus.
 
 ### Inner function phase portrait
 

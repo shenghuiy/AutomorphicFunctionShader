@@ -12,8 +12,8 @@ setlocal
 cd /d "%~dp0"
 set "TARGET=%~1"
 if "%TARGET%"=="" set "TARGET=all"
-if /i not "%TARGET%"=="all" if /i not "%TARGET%"=="poincare" if /i not "%TARGET%"=="icosahedral" if /i not "%TARGET%"=="pearcey" if /i not "%TARGET%"=="kantorovich" if /i not "%TARGET%"=="inner" if /i not "%TARGET%"=="blaschke" (
-  echo Unknown target "%TARGET%". Use poincare, icosahedral, pearcey, kantorovich, inner, blaschke, or no argument for all.
+if /i not "%TARGET%"=="all" if /i not "%TARGET%"=="poincare" if /i not "%TARGET%"=="icosahedral" if /i not "%TARGET%"=="pearcey" if /i not "%TARGET%"=="kantorovich" if /i not "%TARGET%"=="inner" (
+  echo Unknown target "%TARGET%". Use poincare, icosahedral, pearcey, kantorovich, inner, or no argument for all.
   exit /b 1
 )
 for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
@@ -30,7 +30,6 @@ if /i "%TARGET%"=="all" (
   call :build pearcey pearcey.exe || exit /b 1
   call :build kantorovich kantorovich.exe || exit /b 1
   call :build inner inner.exe || exit /b 1
-  call :build blaschke blaschke.exe || exit /b 1
   exit /b 0
 )
 set "OUTPUT=%~2"

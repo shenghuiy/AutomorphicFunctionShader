@@ -9,3 +9,6 @@
 
 # Native build folder
 native/build/
+
+# macOS
+.DS_Store

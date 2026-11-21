@@ -2,7 +2,7 @@
 
 This note explains what the renderers plot and why the plot looks the way it
 does. The formulas match the code in `native/dx12/poincare/` (`kleinian.h` and
-`poincare.cpp`), `native/dx12/common/shaders.h` and `index.html`.
+`poincare.cpp`), `native/dx12/common/shaders.h` and `js/index.html`.
 
 ## The function
 
