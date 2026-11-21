@@ -85,7 +85,7 @@ The default center is `0 0` and span is `3`.
 
 Requires Visual Studio or Build Tools with the MSVC x64 C++ toolchain, the Windows SDK, and a DirectX 12 GPU with double-precision shader support (Windows 10/11).
 
-There are four programs:
+There are six programs:
 
 | Program | Plot | Default center |
 |---|---|---|
@@ -93,9 +93,11 @@ There are four programs:
 | `native\build\icosahedral.exe` | 60 icosahedral rotations, exact sum | `0 0` |
 | `native\build\pearcey.exe` | Pearcey integral, quadrature per pixel | `0 -5` |
 | `native\build\kantorovich.exe` | Harmonic function and Newton basins | `0 0` |
+| `native\build\singular.exe` | Cantor singular inner function, inside and outside the unit disk | `0 0` |
+| `native\build\blaschke.exe` | Infinite Blaschke product approximation | `0 0` |
 
-Run `native\dx12\build.bat` to build all four, or `native\dx12\build.bat poincare` /
-`icosahedral` / `pearcey` / `kantorovich` to build one. All build outputs (`.exe`, `.lib`,
+Run `native\dx12\build.bat` to build all six, or `native\dx12\build.bat poincare` /
+`icosahedral` / `pearcey` / `kantorovich` / `singular` / `blaschke` to build one. All build outputs (`.exe`, `.lib`,
 `.exp`, `.obj`) go to `native\build\`.
 Group elements are enumerated on the CPU; HLSL compute shaders sum the series per pixel.
 DirectX 12 handles GPU buffers, domain coloring, and presentation. Both summation modes
@@ -175,3 +177,57 @@ Use the on-screen controls to adjust the plot.
 - `docs/background.md`: mathematical background.
 - `docs/coxeter.md`: Coxeter groups and the icosahedral automorphic function.
 - `docs/pearcey/`: the Pearcey integral: definition, integration path, quadrature, GPU evaluation, and verification.
+
+### Infinite Blaschke product
+
+Build with native\dx12\build.bat blaschke and run native\build\blaschke.exe.
+The pixel shader evaluates the first N normalized factors of
+B(z) = product_n (|a_n|/a_n)(a_n-z)/(1-conj(a_n)z),
+where a_n = (1-0.8/(n+1)^2) exp(i n goldenAngle), n starts at 1.
+This chosen example satisfies sum_n (1-|a_n|) < infinity.
+The screenshot gives no zero sequence for an infinite Blaschke product.
+The default truncation is 256 factors. Use --terms N or the + and - keys
+to change the truncation, drag to pan, and scroll to zoom.
+The product is evaluated directly in the pixel shader using float complex
+arithmetic and float trigonometry. The D key controls the shared compute
+pass. The --verify-gpu option checks that pass only.
+The I key checks the CPU product's boundary modulus.
+
+### Cantor singular inner phase portrait
+
+The final paragraph of the supplied Axler screenshot specifies a singular
+inner function S_mu, with a non-atomic singular measure supported on a Cantor
+subset of the unit circle. Inner functions have the canonical factorization
+I = exp(i gamma) B S_mu, with a Blaschke factor B and a singular factor S_mu.
+
+Build with native\dx12\build.bat singular and run native\build\singular.exe.
+This renderer now opens on the Cantor portrait by default. The chosen measure
+is the standard middle-thirds Cantor probability measure pushed forward by
+t -> exp(2 pi i t). The screenshot does not specify its precise Cantor
+construction or mass, so this is a concrete example of its described family.
+
+The compute shader approximates the integral in
+S_mu(z) = exp(integral (z+w)/(z-w) dmu(w))
+with 1024 equally weighted quadrature nodes at the surviving interval
+midpoints, at construction depth 10. Each interval has mass 2^-10.
+As depth increases, these discrete quadrature measures converge to the
+non-atomic Cantor measure. Resolution is especially important near the
+boundary support. The limiting function is zero-free in the open disk.
+
+Use --terms N or + and - to change resolution. Requested counts round down
+to a power of two, capped at depth 20. Press F to compare the Cantor portrait,
+the single-atom example, and a Blaschke factor. P exports a PNG.
+
+GPU exponent sums passed CPU comparisons in FP32 and FP64.
+Doubling quadrature from depth 10 to 11 changed S_mu at the sampled points
+0, 0.3+0.2i, 0.8+0.1i, and 0.97+0.01i by at most 1.89e-8.
+This sampled convergence check gives no uniform boundary error bound.
+
+The Cantor renderer also evaluates the integral for |z|>1. Its default span
+is 3.4 to show both sides of the circle. Across gaps in the Cantor support,
+the formula continues analytically. It satisfies
+S_mu(1/conj(z)) = 1/conj(S_mu(z)).
+The displayed exponential clamps its real exponent to [-70,70] to avoid
+floating-point overflow and underflow. The shared coloring fades extreme
+magnitudes near singularities. Boundary features retain finite-quadrature
+resolution limits.
