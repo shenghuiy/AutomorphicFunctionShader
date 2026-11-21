@@ -1,0 +1,8 @@
+#!/bin/sh
+# Keep the PR scope visible before uploading a branch.
+printf '%s\n' 'PR scope rule: include only changes necessary for the requested task.' >&2
+printf '%s\n' 'Keep unrelated code, documentation, and image changes in separate PRs.' >&2
+if git rev-parse --verify origin/main >/dev/null 2>&1; then
+    printf '%s\n' 'Changed files relative to origin/main:' >&2
+    git diff --stat origin/main...HEAD >&2
+fi
