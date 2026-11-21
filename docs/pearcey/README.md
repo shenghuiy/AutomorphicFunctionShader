@@ -9,7 +9,7 @@
 over the plane $`z = x + iy`$. The integral is evaluated per pixel on the GPU: every
 pixel runs its own quadrature rule along a path in the complex $`t`$-plane.
 
-![Phase portrait of the Pearcey integral with the cusp caustic](../pearcey.png)
+![Phase portrait of the Pearcey integral with the cusp caustic](../img/pearcey.png)
 
 These notes explain the mathematics and how the code computes it, one topic per file:
 
