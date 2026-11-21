@@ -88,6 +88,8 @@ supported on a Cantor subset of the unit circle. The default view shows the
 phase on both sides of the circle. Press **F** to cycle through the Cantor
 portrait, a single-atom example, and a Blaschke factor.
 
+![Phase portrait of the Cantor singular inner function](docs/img/inner.png)
+
 See [docs/inner.md](docs/inner.md) for the measure, quadrature, and accuracy near the unit circle.
 
 ## Native Windows renderer
