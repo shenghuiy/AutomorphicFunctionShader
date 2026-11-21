@@ -81,6 +81,7 @@ struct Group {
     // 4 minPartial, ... of them sum to m/count of the total, and only those
     // partial sums are meaningful: the app stops at them and scales by count/m.
     int minPartial = 0;
+    int defaultPalette = 0;     // 0: hue wheel, 1: GreenPinkTones
 };
 
 using Clock = std::chrono::steady_clock;
@@ -424,6 +425,7 @@ static int runApp(const Group& group, int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     app.group = &group;
     app.N = group.defaultTerms;
+    app.palette = group.defaultPalette;
     resetView();
     const bool variableTerms = group.defaultTerms > 0;
     auto readNumber = [](const char* text, double& value) {
@@ -505,8 +507,9 @@ static int runApp(const Group& group, int argc, char** argv) {
             std::printf("  --sphere                Start in the Riemann sphere view, centre facing the viewer\n");
         std::printf("  --function <0|1|2>      Displayed function: %s, %s or %s (default: 0)\n",
                     group.funcNames[0], group.funcNames[1], group.funcNames[2]);
+        std::printf("  --colors <hue|greenpink> Phase colours: hue wheel or GreenPinkTones (default: %s)\n",
+                    group.defaultPalette == 1 ? "greenpink" : "hue");
         std::printf(
-            "  --colors <hue|greenpink> Phase colours: hue wheel or GreenPinkTones (default: hue)\n"
             "  --fp64                  Use double-precision summation\n"
             "  --snapshot <file.png>   Render, save, and exit\n"
             "  --verify-gpu            Check GPU sums against CPU when saving a snapshot\n"

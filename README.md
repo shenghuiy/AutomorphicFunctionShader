@@ -81,6 +81,18 @@ Build with `native\dx12\build.bat kantorovich`; source and embedded HLSL are in
 `native/dx12/kantorovich/kantorovich.cpp`, using the existing shared renderer.
 The default center is `0 0` and span is `3`.
 
+## Inner function phase portrait
+
+Run `native\build\inner.exe` to plot a singular inner function whose measure is
+supported on a Cantor subset of the unit circle. The default view shows the
+phase on both sides of the circle. Press **F** to cycle through the Cantor
+portrait, a single-atom example, and a Blaschke factor. The default palette is
+GreenPinkTones. Press **C** to switch to the hue wheel.
+
+![Phase portrait of the Cantor singular inner function](docs/img/inner.png)
+
+See [docs/inner.md](docs/inner.md) for the measure, quadrature, and accuracy near the unit circle.
+
 ## Native Windows renderer
 
 Requires Visual Studio or Build Tools with the MSVC x64 C++ toolchain, the Windows SDK, and a DirectX 12 GPU with double-precision shader support (Windows 10/11).
@@ -119,8 +131,8 @@ Optionally set the initial view from the command line:
 `--span <value>` sets the extent of the shorter window dimension in complex-plane
 units (default: `5`); it must be finite and positive. The other dimension follows
 the window aspect ratio. Both options are optional. `--function <0|1|2>` picks the
-displayed function. `--colors <hue|greenpink>` picks the phase colours (all programs
-default to the hue wheel). `--terms` exists for `poincare.exe` and `pearcey.exe`, and `--sphere` (start in the Riemann sphere view, with `--center`
+displayed function. `--colors <hue|greenpink>` picks the phase colours (the inner function defaults to GreenPinkTones,
+all other programs to the hue wheel). `--terms` exists for `poincare.exe` and `pearcey.exe`, and `--sphere` (start in the Riemann sphere view, with `--center`
 facing the viewer) only for `icosahedral.exe`. Run either program with `--help` for all options.
 
 Controls (all programs):
@@ -129,7 +141,7 @@ Controls (all programs):
 - `+` / `-`: double / halve the number of terms (`poincare.exe` and `pearcey.exe`).
 - `D`: toggle fp32 / fp64 summation.
 - `M`: cycle plot styles; `F`: cycle displayed functions.
-- `C`: switch phase colours between the hue wheel (default) and GreenPinkTones.
+- `C`: switch phase colours between the hue wheel and GreenPinkTones.
 - `[` / `]`: adjust contour density; `R`: reset the view.
 - `S`: toggle complex plane / Riemann sphere (`icosahedral.exe` only). On the
   sphere, drag rotates and scroll zooms.
@@ -190,56 +202,3 @@ Use the on-screen controls to adjust the plot.
 - `docs/background.md`: mathematical background.
 - `docs/coxeter.md`: Coxeter groups and the icosahedral automorphic function.
 - `docs/pearcey/`: the Pearcey integral: definition, integration path, quadrature, GPU evaluation, and verification.
-
-### Inner function phase portrait
-
-The final paragraph of the supplied Axler screenshot specifies a singular
-inner function S_mu, with a non-atomic singular measure supported on a Cantor
-subset of the unit circle. Inner functions have the canonical factorization
-I = exp(i gamma) B S_mu, with a Blaschke factor B and a singular factor S_mu.
-
-Build with native\dx12\build.bat inner and run native\build\inner.exe.
-This renderer now opens on the Cantor portrait by default. The chosen measure uses three scaled copies of the middle-thirds Cantor
-probability measure, followed by the angular map documented below. The screenshot does not specify its precise Cantor
-construction or mass, so this is a concrete example of its described family.
-
-The compute shader approximates the integral in
-S_mu(z) = exp(integral (z+w)/(z-w) dmu(w))
-with 3072 equally weighted quadrature nodes at the surviving interval
-midpoints, at construction depth 10 per copy. Each node has mass 1/3072.
-As depth increases, these discrete quadrature measures converge to the
-non-atomic Cantor measure. Resolution is especially important near the
-boundary support. The limiting function is zero-free in the open disk.
-
-Use --terms N or + and - to change resolution. Requested counts round down
-to three times a power of two, capped at depth 20 per copy. Press F to compare the Cantor portrait,
-the single-atom example, and a Blaschke factor. P exports a PNG.
-
-GPU exponent sums passed CPU comparisons in FP32 and FP64.
-Doubling quadrature from depth 10 to 11 changed S_mu at the sampled points
-0, 0.3+0.2i, 0.8+0.1i, and 0.97+0.01i by at most 1.89e-8.
-This sampled convergence check gives no uniform boundary error bound.
-
-The Cantor renderer also evaluates the integral for |z|>1. Its default span
-is 1.95 to show both sides of the circle. Across gaps in the Cantor support,
-the formula continues analytically. It satisfies
-S_mu(1/conj(z)) = 1/conj(S_mu(z)).
-The displayed exponential clamps its real exponent to [-70,70] to avoid
-floating-point overflow and underflow. Phase coloring preserves bright boundary detail. Boundary features retain finite-quadrature
-resolution limits.
-
-
-The reference-tuned Cantor preset uses three equally weighted scaled copies
-of the middle-thirds construction, with angle
-theta = 0.12 + 2 pi (sector+t)/3, followed by
-theta -> theta + 0.10 sin(2 theta+0.4).
-Here sector is 0, 1, or 2 and t has the Cantor distribution.
-This smooth circle map preserves the non-atomic, singular character of the
-measure. Total mass is 1. These parameters were chosen visually from the
-reference image.
-
-The updated default uses 3072 nodes (1024 per copy), center (0,-0.04),
-and span 1.95. Requested node counts round down to three times a power of
-two, with a minimum of three nodes and maximum depth 20 per copy.
-Extreme-magnitude fading is disabled for this renderer so boundary phase
-detail remains bright. The tuned GPU exponent sums passed FP64 checks.

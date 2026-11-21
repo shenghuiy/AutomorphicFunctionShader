@@ -99,8 +99,9 @@ int main(int argc, char** argv) {
         "inner.exe", "inner",
         {"Cantor", "Atomic", "Blaschke"},
         {"Cantor exponent sum", "First quadrature node"},
-        0, -0.04, 1.95, 3072,
-        INNER_HLSL, build, reference, value, checkCenter
+        0, -0.04, 2.25, 3072,
+        INNER_HLSL, build, reference, value, checkCenter,
+        false, 0, 1
     };
     return runApp(group, argc, argv);
 }
