@@ -1,7 +1,7 @@
 # Complex Plot Shader
 
 Interactive domain coloring of the automorphic function
-`f(z) = P_{-1,-3}(z) / P_{0,-4}(z)` for a two-generator Kleinian group,
+$`f(z) = \frac{P_{-1,-3}(z)}{P_{0,-4}(z)}`$ for a two-generator Kleinian group,
 approximated by a finite Poincaré series.
 
 ![Domain coloring of the automorphic function rendered with 20,000 group elements](docs/img/poincare.png)
@@ -64,7 +64,7 @@ There are five programs:
 
 | Program | Plot | Default center |
 |---|---|---|
-| `native\build\poincare.exe` | Kleinian ⟨g₁, g₂⟩, truncated Poincaré series | `0 -0.35` |
+| `native\build\poincare.exe` | Kleinian $`\langle g_1, g_2 \rangle`$, truncated Poincaré series | `0 -0.35` |
 | `native\build\icosahedral.exe` | 60 icosahedral rotations, exact sum | `0 0` |
 | `native\build\pearcey.exe` | Pearcey integral, quadrature per pixel | `0 -5` |
 | `native\build\kantorovich.exe` | Harmonic function and Newton basins | `0 0` |
@@ -129,9 +129,9 @@ and keys above. Apple GPUs have no double precision, so `--fp64` / `D` use
 double-float arithmetic (about 48 significant bits), which passes the same
 `--verify-gpu` checks. See [native/metal/README.md](native/metal/README.md).
 
-The Metal build also has `native/build/invariant_j`, Klein's modular j-invariant
+The Metal build also has `native/build/invariant_j`, Klein's modular $`j`$-invariant
 on the upper half-plane (each pixel reduced to the fundamental domain of
-SL(2,ℤ), then summed as a q-series); `F` cycles j, `E₄` and `E₆`; `H` (or `--disk`) maps the half-plane onto the
+$`\mathrm{SL}(2,\mathbb{Z})`$, then summed as a $`q`$-series); `F` cycles $`j`$, $`E_4`$ and $`E_6`$; `H` (or `--disk`) maps the half-plane onto the
 Poincaré unit disk, with `--center` as its middle point.
 
 ## Browser renderer
