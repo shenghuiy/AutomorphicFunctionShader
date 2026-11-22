@@ -1,10 +1,25 @@
 # Inner function phase portrait
 
 The portrait illustrates the singular factor in the canonical factorization
-`I = exp(iγ) B Sμ` of an inner function, where `B` is a Blaschke product.
+$`I = e^{i\gamma} B S_\mu`$ of an inner function, where $`B`$ is a Blaschke
+product. The factorization is given in Garcia and Ross, §2.4, Theorem 2.12. [1](#references)
+
 The Axler reference image describes a non-atomic singular measure on a Cantor
 subset of the unit circle. The renderer uses one example from this family,
 with parameters chosen visually to match the reference.
+
+## Inner functions and Blaschke products
+
+An inner function is a bounded analytic function on the open unit disk whose
+radial boundary values have modulus one almost everywhere on the unit circle.
+Its canonical factorization separates its zeros into a Blaschke product and
+its singular measure into a zero-free singular inner factor. [1](#references)
+
+A Blaschke product is a finite or convergent infinite product of disk factors.
+The renderer's Blaschke example uses a single factor
+$`b_\alpha(z) = \frac{z-\alpha}{1-\overline{\alpha}z}`$, with
+$`\alpha = 0.35 + 0.2i`$. For finite products and their properties, see the
+survey by Garcia, Mashreghi, and Ross. [2](#references)
 
 ## Cantor measure
 
@@ -47,3 +62,12 @@ Increasing the quadrature depth from 10 to 11 changed the function value by
 at most 1.89 × 10⁻⁸ at the four sampled points `0`, `0.3 + 0.2i`,
 `0.8 + 0.1i`, and `0.97 + 0.01i`. This check measures convergence only at
 those points. A uniform error bound near the boundary remains unknown.
+
+## References
+
+1. Stephan Ramon Garcia and William T. Ross. *Model spaces: a survey* (2013),
+   §2.4, especially Theorem 2.12 on canonical factorization.
+   [arXiv:1312.5018](https://arxiv.org/html/1312.5018#S2.SS4).
+2. Stephan Ramon Garcia, Javad Mashreghi, and William T. Ross.
+   *Finite Blaschke products: a survey* (2015, revised 2016).
+   [arXiv:1512.05444](https://arxiv.org/abs/1512.05444).
