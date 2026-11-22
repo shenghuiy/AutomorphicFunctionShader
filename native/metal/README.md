@@ -1,8 +1,8 @@
 # Metal renderer (macOS)
 
-Native Metal versions of the four programs of the DirectX 12 renderer in
+Native Metal versions of the five programs of the DirectX 12 renderer in
 [`../dx12/`](../dx12/), with the same plots, controls and command-line options,
-and a fifth program, `invariant_j`, that so far exists only for Metal.
+and a sixth program, `invariant_j`, that so far exists only for Metal.
 
 | Program | Plot | Default center |
 |---|---|---|
@@ -10,6 +10,7 @@ and a fifth program, `invariant_j`, that so far exists only for Metal.
 | `native/build/icosahedral` | 60 icosahedral rotations, exact sum | `0 0` |
 | `native/build/pearcey` | Pearcey integral, quadrature per pixel | `0 -5` |
 | `native/build/kantorovich` | Harmonic function and Newton basins | `0 0` |
+| `native/build/inner` | Cantor singular inner function, atomic example and Blaschke factor | `0 -0.04` |
 | `native/build/invariant_j` | Modular j-invariant, SL(2,ℤ) | `0 0.9` |
 
 ## Build
@@ -19,7 +20,7 @@ Tools. Tested on an Apple M1 Max with macOS 27 and Apple clang 21. The shaders a
 startup by the Metal framework, so the offline `metal` compiler is not needed.
 
 ```sh
-native/metal/build.sh               # all five programs
+native/metal/build.sh               # all six programs
 native/metal/build.sh pearcey       # one program
 native/metal/build.sh poincare p2   # native/build/p2, e.g. while poincare is running
 ```
@@ -35,6 +36,7 @@ native/build/pearcey --function 1 --colors greenpink
 native/build/kantorovich --fp64 --function 2
 native/build/invariant_j --fp64 --center 0.3 0.01 --span 0.02
 native/build/invariant_j --disk --function 1
+native/build/inner --fp64 --terms 3072 --snapshot inner.png
 ```
 
 The options and keys are those described in the [top-level README](../../README.md)
@@ -66,6 +68,15 @@ Differences from the DirectX 12 version:
 - The library is compiled with fast math off (`MTLMathModeSafe`) and floating-point
   contraction disabled, which the double-float arithmetic depends on.
 - The window is redrawn only when something changes.
+
+## Inner function
+
+`inner` plots the Cantor singular inner function from the DX12 renderer. `F`
+cycles the Cantor portrait, a single-atom example and a Blaschke factor. The
+default palette is GreenPinkTones; `C` or `--colors hue` switches to the hue wheel.
+`--terms N` and `+` / `-` control the Cantor quadrature, rounded down to three
+times a power of two (default 3,072 nodes). The view includes both sides of
+the unit circle. See [the mathematical background](../../docs/inner.md).
 
 ## Modular j-invariant
 
