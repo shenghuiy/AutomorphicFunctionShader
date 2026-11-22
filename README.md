@@ -122,9 +122,9 @@ To validate GPU sums against the CPU evaluator at three sample pixels:
 
 ## Native macOS renderer
 
-The same four programs run on macOS with Metal. Build them with
+The same five programs run on macOS with Metal. Build them with
 `native/metal/build.sh` (or `native/metal/build.sh poincare` for one) and run
-`native/build/poincare`, `icosahedral`, `pearcey` or `kantorovich` with the options
+`native/build/poincare`, `icosahedral`, `pearcey`, `kantorovich` or `inner` with the options
 and keys above. Apple GPUs have no double precision, so `--fp64` / `D` use
 double-float arithmetic (about 48 significant bits), which passes the same
 `--verify-gpu` checks. See [native/metal/README.md](native/metal/README.md).
@@ -158,7 +158,7 @@ Use the on-screen controls to adjust the plot.
   - `mobius.h`: SL(2,C) matrices and Möbius transformations.
   - `png.h`: dependency-free PNG writer.
 - `native/dx12/build.bat`: builds one or all programs.
-- `native/metal/`: Metal versions of the four programs for macOS; see [native/metal/README.md](native/metal/README.md).
+- `native/metal/`: Metal versions of the five programs for macOS; see [native/metal/README.md](native/metal/README.md).
 - `js/index.html`: browser implementation (WebGL2 shaders, UI, Kleinian group).
 - `js/complex.js`: complex numbers and Möbius matrices for the browser, shared by both groups.
 - `js/icosahedral.js`: icosahedral group, `F`, `h`, Klein's `J`, and their GLSL snippets for the browser.

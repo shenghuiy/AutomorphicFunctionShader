@@ -148,6 +148,7 @@ struct Group {
     // plane view's centre (--center), which lands at the middle of the disk.
     bool disk = false;
     double diskCx = 0, diskCy = 1;  // z0 for --disk without --center
+    int defaultPalette = 0;     // 0: hue wheel, 1: GreenPinkTones
 };
 
 using Clock = std::chrono::steady_clock;
@@ -560,6 +561,7 @@ static int runApp(const Group& group, int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     app.group = &group;
     app.N = group.defaultTerms;
+    app.palette = group.defaultPalette;
     resetView();
     const bool variableTerms = group.defaultTerms > 0;
     auto readNumber = [](const char* text, double& value) {
@@ -653,11 +655,12 @@ static int runApp(const Group& group, int argc, char** argv) {
         std::printf("  --function <0|1|2>      Displayed function: %s, %s or %s (default: 0)\n",
                     group.funcNames[0], group.funcNames[1], group.funcNames[2]);
         std::printf(
-            "  --colors <hue|greenpink> Phase colours: hue wheel or GreenPinkTones (default: hue)\n"
+            "  --colors <hue|greenpink> Phase colours: hue wheel or GreenPinkTones (default: %s)\n"
             "  --fp64                  Use emulated double precision (double-float) on the GPU\n"
             "  --snapshot <file.png>   Render, save, and exit\n"
             "  --verify-gpu            Check GPU sums against CPU when saving a snapshot\n"
-            "  --help, -h              Show this help\n");
+            "  --help, -h              Show this help\n",
+            group.defaultPalette == 1 ? "greenpink" : "hue");
         return 0;
     }
     std::printf("%s  %s\n", group.title, group.formula);

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds the native Metal renderers with Apple clang (Xcode or the Command Line Tools).
 #
-#   ./build.sh                       poincare, icosahedral, pearcey, kantorovich and invariant_j in native/build
+#   ./build.sh                       poincare, icosahedral, pearcey, kantorovich, inner and invariant_j in native/build
 #   ./build.sh poincare              native/build/poincare only
 #   ./build.sh poincare other        native/build/other (e.g. while poincare is running)
 #
@@ -25,10 +25,10 @@ build() {
 TARGET=${1:-all}
 case "$TARGET" in
 all)
-    for p in poincare icosahedral pearcey kantorovich invariant_j; do build "$p" "$p"; done ;;
-poincare|icosahedral|pearcey|kantorovich|invariant_j)
+    for p in poincare icosahedral pearcey kantorovich inner invariant_j; do build "$p" "$p"; done ;;
+poincare|icosahedral|pearcey|kantorovich|inner|invariant_j)
     build "$TARGET" "${2:-$TARGET}" ;;
 *)
-    echo "Unknown target \"$TARGET\". Use poincare, icosahedral, pearcey, kantorovich, invariant_j, or no argument for all." >&2
+    echo "Unknown target \"$TARGET\". Use poincare, icosahedral, pearcey, kantorovich, inner, invariant_j, or no argument for all." >&2
     exit 1 ;;
 esac
